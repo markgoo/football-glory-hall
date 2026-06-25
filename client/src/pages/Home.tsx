@@ -1,8 +1,12 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Trophy, Users, Calendar, Shield } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const Home: React.FC = () => {
+  const { user } = useAuth();
+  const startPath = user ? '/tournaments' : '/register';
+
   return (
     <div className="max-w-7xl mx-auto">
       {/* Hero Section */}
@@ -15,7 +19,7 @@ const Home: React.FC = () => {
         </p>
         <div className="space-x-4">
           <Link
-            to="/register"
+            to={startPath}
             className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Trophy className="w-5 h-5 mr-2" />

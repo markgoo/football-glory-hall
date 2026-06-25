@@ -162,6 +162,17 @@ const calculateGroupStandings = (teams: Team[], matches: Match[]) => {
   return standings;
 };
 
+const getCompletedGroupNames = (matches: Match[]) => {
+  const counts = matches.filter(match => match.groupName).reduce<Record<string, { total: number; completed: number }>>((groups, match) => {
+    const groupName = match.groupName as string;
+    groups[groupName] = groups[groupName] || { total: 0, completed: 0 };
+    groups[groupName].total += 1;
+    if (match.status === 'completed') groups[groupName].completed += 1;
+    return groups;
+  }, {});
+  return new Set(Object.entries(counts).filter(([, count]) => count.total > 0 && count.completed === count.total).map(([groupName]) => groupName));
+};
+
 const splitGroupEntries = (groupedTeams: Record<string, Team[]>) => {
   const entries = Object.entries(groupedTeams).sort(([a], [b]) => compareGroupNames(a, b));
   const midpoint = Math.ceil(entries.length / 2);
@@ -275,6 +286,7 @@ const TournamentDetail: React.FC = () => {
   const teams = tournament?.teams || [];
   const groupedTeams = useMemo(() => groupByName<Team>(teams), [teams]);
   const groupStandings = useMemo(() => calculateGroupStandings(teams, matches), [teams, matches]);
+  const completedGroupNames = useMemo(() => getCompletedGroupNames(matches), [matches]);
   const stageLookup = useMemo(() => buildMatchStageLookup(matches), [matches]);
   const bracketColumns = useMemo(() => buildBracketColumns(matches, stageLookup), [matches, stageLookup]);
   const championInfo = useMemo(() => getChampionInfo(tournament, bracketColumns.finalMatch), [bracketColumns.finalMatch, tournament]);
@@ -456,14 +468,14 @@ const TournamentDetail: React.FC = () => {
           <InfoCard icon={<Calendar className="w-5 h-5 text-green-600" />} label="创建时间" value={new Date(tournament.createdAt).toLocaleDateString()} />
           <InfoCard icon={<Trophy className="w-5 h-5 text-purple-600" />} label="杯赛类型" value={tournament.type === 'knockout' ? '淘汰赛' : tournament.type === 'league' ? '联赛' : '小组赛 + 淘汰赛'} detail={isGroupTournament && tournament.groupSize ? `${tournament.teamCount / tournament.groupSize} 组，每组 ${tournament.groupSize} 队` : undefined} />
         </div>
-        {teams.length > 0 && <TournamentBracket groupedTeams={groupedTeams} standings={groupStandings} columns={bracketColumns} champion={championInfo} />}
+        {teams.length > 0 && <TournamentBracket groupedTeams={groupedTeams} standings={groupStandings} completedGroupNames={completedGroupNames} columns={bracketColumns} champion={championInfo} />}
         {teams.length > 0 && (
           <section>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">参赛球队</h3>
             {isGroupTournament ? <div className="grid lg:grid-cols-2 gap-4">{Object.entries(groupedTeams).sort(([a], [b]) => compareGroupNames(a, b)).map(([name, groupTeams]) => <TeamGroup key={name} groupName={name} teams={groupTeams} favoriteTeamIds={favoriteTeamIds} onToggleFavorite={toggleFavoriteTeam} />)}</div> : <div className="grid md:grid-cols-2 gap-4">{teams.map(team => <TeamCard key={team.id} team={team} isFavorite={favoriteTeamIds.includes(team.id)} onToggleFavorite={toggleFavoriteTeam} />)}</div>}
           </section>
         )}
-        {isGroupTournament && Object.keys(groupStandings).length > 0 && <Standings standings={groupStandings} />}
+        {isGroupTournament && Object.keys(groupStandings).length > 0 && <Standings standings={groupStandings} completedGroupNames={completedGroupNames} />}
         {matches.length > 0 && (
           <section id="match-results" className="mt-8 scroll-mt-4">
             <div className="flex justify-between items-center mb-4">
@@ -483,7 +495,7 @@ const TournamentDetail: React.FC = () => {
 
 const InfoCard: React.FC<{ icon: React.ReactNode; label: string; value: string; detail?: string }> = ({ icon, label, value, detail }) => <div className="bg-gray-50 p-4 rounded-lg"><div className="flex items-center gap-2">{icon}<span className="text-sm text-gray-600">{label}</span></div><p className="text-lg font-semibold text-gray-900 mt-1">{value}</p>{detail && <p className="text-sm text-gray-600 mt-1">{detail}</p>}</div>;
 
-const TournamentBracket: React.FC<{ groupedTeams: Record<string, Team[]>; standings: Record<string, GroupStanding[]>; columns: { left: BracketColumn[]; right: BracketColumn[]; finalMatch?: Match }; champion?: ChampionInfo }> = ({ groupedTeams, standings, columns, champion }) => {
+const TournamentBracket: React.FC<{ groupedTeams: Record<string, Team[]>; standings: Record<string, GroupStanding[]>; completedGroupNames: Set<string>; columns: { left: BracketColumn[]; right: BracketColumn[]; finalMatch?: Match }; champion?: ChampionInfo }> = ({ groupedTeams, standings, completedGroupNames, columns, champion }) => {
   const { left, right } = splitGroupEntries(groupedTeams);
   return (
     <section className="mb-8">
@@ -499,21 +511,21 @@ const TournamentBracket: React.FC<{ groupedTeams: Record<string, Team[]>; standi
       </div>
       <div className="border rounded-lg bg-slate-50 overflow-x-auto">
         <div className="min-w-[980px] p-4 grid gap-3 items-stretch" style={{ gridTemplateColumns: `180px repeat(${columns.left.length}, minmax(150px, 1fr)) minmax(170px, 1.1fr) repeat(${columns.right.length}, minmax(150px, 1fr)) 180px` }}>
-          <BracketGroups title="左侧小组" entries={left} standings={standings} />
+          <BracketGroups title="左侧小组" entries={left} standings={standings} completedGroupNames={completedGroupNames} />
           {columns.left.map((column, index) => <BracketMatchColumn key={`left-${column.title}-${index}`} column={column} />)}
           <div className="flex flex-col justify-center">
             <div className="text-center text-sm font-semibold text-gray-700 mb-2">决赛</div>
             {columns.finalMatch ? <BracketMatchCard match={columns.finalMatch} prominent /> : <div className="border border-dashed rounded bg-white p-4 text-center text-sm text-gray-500">决赛待生成</div>}
           </div>
           {columns.right.map((column, index) => <BracketMatchColumn key={`right-${column.title}-${index}`} column={column} />)}
-          <BracketGroups title="右侧小组" entries={right} standings={standings} />
+          <BracketGroups title="右侧小组" entries={right} standings={standings} completedGroupNames={completedGroupNames} />
         </div>
       </div>
     </section>
   );
 };
 
-const BracketGroups: React.FC<{ title: string; entries: Array<[string, Team[]]>; standings: Record<string, GroupStanding[]> }> = ({ title, entries, standings }) => (
+const BracketGroups: React.FC<{ title: string; entries: Array<[string, Team[]]>; standings: Record<string, GroupStanding[]>; completedGroupNames: Set<string> }> = ({ title, entries, standings, completedGroupNames }) => (
   <div>
     <div className="text-sm font-semibold text-gray-700 mb-2">{title}</div>
     <div className="space-y-2">
@@ -523,7 +535,7 @@ const BracketGroups: React.FC<{ title: string; entries: Array<[string, Team[]]>;
           <div className="space-y-1">
             {teams.slice(0, 4).map(team => {
               const standingIndex = standings[name]?.findIndex(row => row.team.id === team.id) ?? -1;
-              const qualified = standingIndex >= 0 && standingIndex < 2;
+              const qualified = completedGroupNames.has(name) && standingIndex >= 0 && standingIndex < 2;
               return <div key={team.id} className={`text-xs px-1 py-0.5 rounded flex items-center gap-1 min-w-0 ${qualified ? 'bg-green-100 text-green-800 font-semibold' : 'text-gray-700'}`}><TeamFlag team={team} className="w-4 h-3 flex-shrink-0" /><TeamLogo team={team} className="w-4 h-4 flex-shrink-0" /><span className="truncate">{team.name}</span>{qualified && <span className="ml-1 text-[10px] flex-shrink-0">晋级</span>}</div>;
             })}
           </div>
@@ -560,8 +572,62 @@ const BracketMatchCard: React.FC<{ match: Match; prominent?: boolean }> = ({ mat
 const TeamGroup: React.FC<{ groupName: string; teams: Team[]; favoriteTeamIds: string[]; onToggleFavorite: (teamId: string) => void }> = ({ groupName, teams, favoriteTeamIds, onToggleFavorite }) => <div className="border rounded-lg p-4"><h4 className="font-semibold text-gray-900 mb-3">{groupName}</h4><div className="space-y-2">{teams.map(team => <TeamCard key={team.id} team={team} isFavorite={favoriteTeamIds.includes(team.id)} onToggleFavorite={onToggleFavorite} compact />)}</div></div>;
 const TeamCard: React.FC<{ team: Team; isFavorite: boolean; compact?: boolean; onToggleFavorite: (teamId: string) => void }> = ({ team, isFavorite, compact = false, onToggleFavorite }) => <div className={`border rounded-lg ${compact ? 'px-3 py-2' : 'p-4'} flex items-center justify-between`}><div className="min-w-0"><h4 className="font-semibold text-gray-900 flex items-center gap-2 min-w-0"><TeamFlag team={team} className="w-5 h-4 flex-shrink-0" /><TeamLogo team={team} className="w-5 h-5 flex-shrink-0" /><span className="truncate">{team.name}</span></h4><p className="text-sm text-gray-600">{team.shortName}{team.country ? ` · ${team.country}` : ''}</p></div><button onClick={() => onToggleFavorite(team.id)} className={`p-2 rounded hover:bg-yellow-50 ${isFavorite ? 'text-yellow-500' : 'text-gray-400'}`}><Star className="w-5 h-5" fill={isFavorite ? 'currentColor' : 'none'} /></button></div>;
 
-const Standings: React.FC<{ standings: Record<string, GroupStanding[]> }> = ({ standings }) => (
-  <section className="mt-8"><h3 className="text-xl font-semibold text-gray-900 mb-4">小组积分榜</h3><div className="grid xl:grid-cols-2 gap-4">{Object.entries(standings).sort(([a], [b]) => compareGroupNames(a, b)).map(([name, rows]) => <div key={name} className="border rounded-lg overflow-hidden"><div className="bg-gray-50 px-4 py-3 font-semibold text-gray-900">{name}</div><table className="min-w-full text-sm"><thead className="bg-white border-b"><tr className="text-gray-500"><th className="px-3 py-2 text-left">排名</th><th className="px-3 py-2 text-left">球队</th><th className="px-3 py-2 text-center">赛</th><th className="px-3 py-2 text-center">胜</th><th className="px-3 py-2 text-center">平</th><th className="px-3 py-2 text-center">负</th><th className="px-3 py-2 text-center">进</th><th className="px-3 py-2 text-center">失</th><th className="px-3 py-2 text-center">净</th><th className="px-3 py-2 text-center">分</th></tr></thead><tbody>{rows.map((row, index) => <tr key={row.team.id} className={index < 2 ? 'bg-green-50' : ''}><td className="px-3 py-2">{index + 1}</td><td className="px-3 py-2 font-medium text-gray-900"><span className="inline-flex items-center gap-2 min-w-0"><TeamFlag team={row.team} className="w-5 h-4 flex-shrink-0" /><TeamLogo team={row.team} className="w-5 h-5 flex-shrink-0" /><span>{row.team.name}</span>{index < 2 && <span className="ml-1 text-xs text-green-700">晋级</span>}</span></td><td className="px-3 py-2 text-center">{row.played}</td><td className="px-3 py-2 text-center">{row.wins}</td><td className="px-3 py-2 text-center">{row.draws}</td><td className="px-3 py-2 text-center">{row.losses}</td><td className="px-3 py-2 text-center">{row.goalsFor}</td><td className="px-3 py-2 text-center">{row.goalsAgainst}</td><td className="px-3 py-2 text-center">{row.goalDifference}</td><td className="px-3 py-2 text-center font-semibold">{row.points}</td></tr>)}</tbody></table></div>)}</div></section>
+const Standings: React.FC<{ standings: Record<string, GroupStanding[]>; completedGroupNames: Set<string> }> = ({ standings, completedGroupNames }) => (
+  <section className="mt-8">
+    <h3 className="text-xl font-semibold text-gray-900 mb-4">小组积分榜</h3>
+    <div className="grid xl:grid-cols-2 gap-4">
+      {Object.entries(standings).sort(([a], [b]) => compareGroupNames(a, b)).map(([name, rows]) => {
+        const groupCompleted = completedGroupNames.has(name);
+        return (
+          <div key={name} className="border rounded-lg overflow-hidden">
+            <div className="bg-gray-50 px-4 py-3 font-semibold text-gray-900">{name}</div>
+            <table className="min-w-full text-sm">
+              <thead className="bg-white border-b">
+                <tr className="text-gray-500">
+                  <th className="px-3 py-2 text-left">排名</th>
+                  <th className="px-3 py-2 text-left">球队</th>
+                  <th className="px-3 py-2 text-center">赛</th>
+                  <th className="px-3 py-2 text-center">胜</th>
+                  <th className="px-3 py-2 text-center">平</th>
+                  <th className="px-3 py-2 text-center">负</th>
+                  <th className="px-3 py-2 text-center">进</th>
+                  <th className="px-3 py-2 text-center">失</th>
+                  <th className="px-3 py-2 text-center">净</th>
+                  <th className="px-3 py-2 text-center">分</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => {
+                  const qualified = groupCompleted && index < 2;
+                  return (
+                    <tr key={row.team.id} className={qualified ? 'bg-green-50' : ''}>
+                      <td className="px-3 py-2">{index + 1}</td>
+                      <td className="px-3 py-2 font-medium text-gray-900">
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <TeamFlag team={row.team} className="w-5 h-4 flex-shrink-0" />
+                          <TeamLogo team={row.team} className="w-5 h-5 flex-shrink-0" />
+                          <span>{row.team.name}</span>
+                          {qualified && <span className="ml-1 text-xs text-green-700">晋级</span>}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-center">{row.played}</td>
+                      <td className="px-3 py-2 text-center">{row.wins}</td>
+                      <td className="px-3 py-2 text-center">{row.draws}</td>
+                      <td className="px-3 py-2 text-center">{row.losses}</td>
+                      <td className="px-3 py-2 text-center">{row.goalsFor}</td>
+                      <td className="px-3 py-2 text-center">{row.goalsAgainst}</td>
+                      <td className="px-3 py-2 text-center">{row.goalDifference}</td>
+                      <td className="px-3 py-2 text-center font-semibold">{row.points}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  </section>
 );
 
 const MatchToolbar: React.FC<{ query: string; onQueryChange: (value: string) => void; groupFilter: string; onGroupFilterChange: (value: string) => void; groupOptions: string[]; roundFilter: string; onRoundFilterChange: (value: string) => void; roundOptions: number[]; statusFilter: MatchStatusFilter; onStatusFilterChange: (value: MatchStatusFilter) => void; sortMode: MatchSortMode; onSortModeChange: (value: MatchSortMode) => void; onlyFavorites: boolean; onOnlyFavoritesChange: (value: boolean) => void; hasFavorites: boolean }> = ({ query, onQueryChange, groupFilter, onGroupFilterChange, groupOptions, roundFilter, onRoundFilterChange, roundOptions, statusFilter, onStatusFilterChange, sortMode, onSortModeChange, onlyFavorites, onOnlyFavoritesChange, hasFavorites }) => (
