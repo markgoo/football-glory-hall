@@ -13,6 +13,7 @@ type ManualSideKey = 'home' | 'away';
 type ManualRoll = { candidates: number[]; pool: number[]; die?: number; goals?: number; activeIndex?: number; rolling?: boolean; rollClicks?: number };
 type ManualGame = Record<ManualHalfKey, { home?: ManualRoll; away?: ManualRoll }>;
 type ManualRollSession = { targetDie: number; clicks: number; currentTick: number; landingAt?: number };
+type PenaltyKick = { side: ManualSideKey; shooter?: number; keeper?: number; goal?: boolean };
 type BracketColumn = { title: string; matches: Match[] };
 type ChampionInfo = { name: string; source: 'official' | 'final' };
 type GroupStanding = {
@@ -30,6 +31,14 @@ type GroupStanding = {
 const KNOCKOUT_GROUP_NAME = '淘汰赛';
 const UNGROUPED_NAME = '未分组';
 const emptyManualGame = (): ManualGame => ({ firstHalf: {}, secondHalf: {} });
+const getPenaltyScore = (kicks: PenaltyKick[], side: ManualSideKey) => kicks.filter(kick => kick.side === side && kick.goal).length;
+const getPenaltyComplete = (kicks: PenaltyKick[]) => {
+  const completed = kicks.filter(kick => kick.shooter !== undefined && kick.keeper !== undefined);
+  const homeTaken = completed.filter(kick => kick.side === 'home').length;
+  const awayTaken = completed.filter(kick => kick.side === 'away').length;
+  if (homeTaken < 5 || awayTaken < 5 || homeTaken !== awayTaken) return false;
+  return getPenaltyScore(completed, 'home') !== getPenaltyScore(completed, 'away');
+};
 
 const groupByName = <T extends { groupName?: string }>(items: T[]) => {
   return items.reduce<Record<string, T[]>>((groups, item) => {
@@ -97,7 +106,7 @@ const getGroupOrder = (name: string) => {
   return stageOrder[name] ?? Number.MAX_SAFE_INTEGER;
 };
 const compareGroupNames = (a: string, b: string) => getGroupOrder(a) - getGroupOrder(b) || a.localeCompare(b);
-const compareMatchStageNames = (a: string, b: string) => getGroupOrder(b) - getGroupOrder(a) || b.localeCompare(a);
+const compareMatchStageNames = (a: string, b: string) => getGroupOrder(a) - getGroupOrder(b) || a.localeCompare(b);
 const getKnockoutStageLabel = (count: number) => {
   const entrants = count * 2;
   if (entrants === 128) return '六十四分之一决赛';
@@ -253,6 +262,8 @@ const TournamentDetail: React.FC = () => {
   const [manualAutoSubmit, setManualAutoSubmit] = useState(false);
   const [manualRollAllUsed, setManualRollAllUsed] = useState(false);
   const [manualSaved, setManualSaved] = useState(false);
+  const [penaltyKicks, setPenaltyKicks] = useState<PenaltyKick[]>([]);
+  const [penaltyDiceOpen, setPenaltyDiceOpen] = useState(false);
   const manualRollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const manualRollSessions = useRef<Record<string, ManualRollSession>>({});
   const [query, setQuery] = useState('');
@@ -265,6 +276,7 @@ const TournamentDetail: React.FC = () => {
   const [bracketOpen, setBracketOpen] = useState(false);
   const [teamsOpen, setTeamsOpen] = useState(false);
   const [standingsOpen, setStandingsOpen] = useState(false);
+  const [collapsedRounds, setCollapsedRounds] = useState<Set<number>>(new Set());
   const favoriteStorageKey = id ? `football-glory-hall:favorites:${id}` : '';
   const clearManualRollTimer = (half: ManualHalfKey, side: 'home' | 'away') => {
     const key = `${half}:${side}`;
@@ -310,6 +322,7 @@ const TournamentDetail: React.FC = () => {
   const groupOptions = useMemo(() => Object.keys(groupMatchesByStage(scheduleMatches, stageLookup)).sort(compareMatchStageNames), [scheduleMatches, stageLookup]);
   const roundOptions = useMemo(() => Array.from(new Set(scheduleMatches.map(match => match.round))).sort((a, b) => a - b), [scheduleMatches]);
   const completedMatchesCount = useMemo(() => matches.filter(match => match.status === 'completed').length, [matches]);
+  const nextScheduledMatch = useMemo(() => scheduleMatches.find(match => match.status === 'scheduled'), [scheduleMatches]);
   const favoriteTeams = useMemo(() => teams.filter(team => favoriteTeamIds.includes(team.id)), [teams, favoriteTeamIds]);
 
   const filteredMatches = useMemo(() => {
@@ -348,6 +361,8 @@ const TournamentDetail: React.FC = () => {
     setManualAutoSubmit(false);
     setManualRollAllUsed(false);
     setManualSaved(false);
+    setPenaltyKicks([]);
+    setPenaltyDiceOpen(false);
   };
   const updateManualRoll = (half: ManualHalfKey, side: ManualSideKey, updater: (roll: ManualRoll) => ManualRoll) => {
     if (!manualMatch) return;
@@ -433,30 +448,74 @@ const TournamentDetail: React.FC = () => {
     manualGame.secondHalf.home?.goals !== undefined &&
     manualGame.secondHalf.away?.goals !== undefined
   );
+  const manualNeedsPenalty = Boolean(manualMatch && manualGameComplete && !manualMatch.groupName && getManualScore('home') === getManualScore('away'));
+  const penaltyComplete = useMemo(() => getPenaltyComplete(penaltyKicks), [penaltyKicks]);
+  const manualReadyToSave = manualGameComplete && (!manualNeedsPenalty || penaltyComplete);
+  const rollPenaltyShotDie = () => Math.floor(Math.random() * 7);
+  const rollPenaltySaveDie = () => Math.floor(Math.random() * 6) + 1;
+  const rollPenalty = (forcedDie?: number) => {
+    if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
+    setPenaltyKicks(current => {
+      const last = current[current.length - 1];
+      if (!last || (last.shooter !== undefined && last.keeper !== undefined)) {
+        const nextDie = forcedDie ?? rollPenaltyShotDie();
+        return [...current, { side: current.length % 2 === 0 ? 'home' : 'away', shooter: nextDie }];
+      }
+      if (last.shooter === undefined) {
+        const nextDie = forcedDie ?? rollPenaltyShotDie();
+        return current.map((kick, index) => index === current.length - 1 ? { ...kick, shooter: nextDie } : kick);
+      }
+      if (last.keeper === undefined) {
+        const keeper = forcedDie ?? rollPenaltySaveDie();
+        return current.map((kick, index) => index === current.length - 1 ? { ...kick, keeper, goal: (kick.shooter ?? 0) > 0 && (kick.shooter ?? 0) >= keeper } : kick);
+      }
+      return current;
+    });
+  };
+  const openPenaltyDice = () => {
+    if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
+    setPenaltyDiceOpen(true);
+  };
+  const completeManualPenaltyKick = (shooter: number, keeper: number) => {
+    if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
+    setPenaltyKicks(current => {
+      const last = current[current.length - 1];
+      const side: ManualSideKey = !last || (last.shooter !== undefined && last.keeper !== undefined) ? (current.length % 2 === 0 ? 'home' : 'away') : last.side;
+      const completedKick = { side, shooter, keeper, goal: shooter > 0 && shooter >= keeper };
+      if (!last || (last.shooter !== undefined && last.keeper !== undefined)) return [...current, completedKick];
+      return current.map((kick, index) => index === current.length - 1 ? completedKick : kick);
+    });
+  };
   const submitManualMatch = async () => {
-    if (!manualMatch || !manualGameComplete) return;
+    if (!manualMatch || !manualReadyToSave) return;
     setSubmittingManual(true);
     try {
       await matchAPI.manual(manualMatch.id, {
         homeScore: getManualScore('home'),
         awayScore: getManualScore('away'),
+        homePenaltyScore: manualNeedsPenalty ? getPenaltyScore(penaltyKicks, 'home') : undefined,
+        awayPenaltyScore: manualNeedsPenalty ? getPenaltyScore(penaltyKicks, 'away') : undefined,
         manualDetails: {
           method: 'six_candidate_goals_by_half',
           distribution: '候选进球数按权重生成：0约46%，1约32%，2约15%，3约5.5%，4约1.5%；骰子1-6选择对应位置。',
-          halves: manualGame
+          halves: manualGame,
+          penalties: manualNeedsPenalty ? penaltyKicks : undefined
         }
       });
       clearAllManualRollTimers();
       setManualAutoSubmit(false);
       setManualRollAllUsed(false);
       setManualSaved(true);
+      setPenaltyKicks([]);
+      setPenaltyDiceOpen(false);
+      if (manualNeedsPenalty) setManualMatch(null);
       await fetchTournament();
     } finally { setSubmittingManual(false); }
   };
   useEffect(() => {
-    if (!manualAutoSubmit || !manualGameComplete || manualRollingCount > 0 || submittingManual) return;
+    if (!manualAutoSubmit || manualNeedsPenalty || !manualReadyToSave || manualRollingCount > 0 || submittingManual) return;
     submitManualMatch();
-  }, [manualAutoSubmit, manualGameComplete, manualRollingCount, submittingManual]);
+  }, [manualAutoSubmit, manualNeedsPenalty, manualReadyToSave, manualRollingCount, submittingManual]);
   const handleJumpToResults = () => {
     setGroupFilter('all');
     setRoundFilter('all');
@@ -464,6 +523,30 @@ const TournamentDetail: React.FC = () => {
     setQuery('');
     setOnlyFavorites(false);
     window.setTimeout(() => document.getElementById('match-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
+  const handleJumpToNextScheduledMatch = () => {
+    if (!nextScheduledMatch) return;
+    setGroupFilter('all');
+    setRoundFilter('all');
+    setStatusFilter('all');
+    setQuery('');
+    setOnlyFavorites(false);
+    setCollapsedRounds(current => {
+      const next = new Set(current);
+      next.delete(nextScheduledMatch.round);
+      return next;
+    });
+    window.setTimeout(() => document.getElementById(`match-${nextScheduledMatch.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  };
+  const scrollToPageTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  const scrollToPageBottom = () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+  const toggleRoundCollapsed = (round: number) => {
+    setCollapsedRounds(current => {
+      const next = new Set(current);
+      if (next.has(round)) next.delete(round);
+      else next.add(round);
+      return next;
+    });
   };
 
   if (loading) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" /></div>;
@@ -505,36 +588,66 @@ const TournamentDetail: React.FC = () => {
           <section id="match-results" className="mt-8 scroll-mt-4">
             <div className="flex justify-between items-center mb-4">
               <div><h3 className="text-xl font-semibold text-gray-900">比赛安排</h3><p className="text-sm text-gray-600 mt-1">当前显示 {filteredMatches.length} / {scheduleMatches.length} 场比赛{favoriteTeams.length > 0 && `，关注 ${favoriteTeams.map(team => team.name).join('、')}`}</p></div>
-              {filteredMatches.some(match => match.status === 'scheduled' && match.homeTeam && match.awayTeam) && <button onClick={handleStartAllMatches} disabled={startingAll} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{startingAll ? '正在开始...' : '开始当前筛选比赛'}</button>}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {nextScheduledMatch && <button onClick={handleJumpToNextScheduledMatch} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center"><Play className="w-4 h-4 mr-2" />下一场比赛</button>}
+                {filteredMatches.some(match => match.status === 'scheduled' && match.homeTeam && match.awayTeam) && <button onClick={handleStartAllMatches} disabled={startingAll} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{startingAll ? '正在开始...' : '开始当前筛选比赛'}</button>}
+              </div>
             </div>
             <MatchToolbar query={query} onQueryChange={setQuery} groupFilter={groupFilter} onGroupFilterChange={setGroupFilter} groupOptions={groupOptions} roundFilter={roundFilter} onRoundFilterChange={setRoundFilter} roundOptions={roundOptions} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} sortMode={sortMode} onSortModeChange={setSortMode} onlyFavorites={onlyFavorites} onOnlyFavoritesChange={setOnlyFavorites} hasFavorites={favoriteTeamIds.length > 0} />
             <div className="space-y-6">
-              {Object.entries(filteredMatchesByRound).sort(([a], [b]) => sortMode === 'round-desc' ? Number(b) - Number(a) : Number(a) - Number(b)).map(([round, stageGroups]) => (
-                <div key={round} className="border rounded-lg p-4 bg-gray-50">
-                  <h4 className="font-semibold text-gray-900 mb-3">第 {round} 轮</h4>
-                  <div className="space-y-4">
-                    {Object.entries(stageGroups).sort(([a], [b]) => compareMatchStageNames(a, b)).map(([name, groupMatches]) => (
-                      <div key={`${round}-${name}`}>
-                        <div className="text-sm font-medium text-gray-700 mb-2">{name}</div>
-                        <div className="space-y-3">
+              {Object.entries(filteredMatchesByRound).sort(([a], [b]) => sortMode === 'round-desc' ? Number(b) - Number(a) : Number(a) - Number(b)).map(([round, stageGroups]) => {
+                const roundNumber = Number(round);
+                const roundMatches = Object.values(stageGroups).flat();
+                const completedRoundMatches = roundMatches.filter(match => match.status === 'completed').length;
+                const collapsed = collapsedRounds.has(roundNumber);
+                const roundStatus = completedRoundMatches === roundMatches.length ? 'completed' : completedRoundMatches > 0 ? 'partial' : 'pending';
+                const roundStatusClass = roundStatus === 'completed' ? 'bg-green-100 text-green-800' : roundStatus === 'partial' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700';
+                const roundStatusText = roundStatus === 'completed' ? '全部完成' : roundStatus === 'partial' ? '有未完成' : '未开始';
+                return (
+                  <div key={round} className="border rounded-lg bg-gray-50 overflow-hidden">
+                    <button type="button" onClick={() => toggleRoundCollapsed(roundNumber)} className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-gray-100">
+                      <h4 className="font-semibold text-gray-900">第 {round} 轮</h4>
+                      <span className="flex items-center gap-3 text-sm text-gray-600">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${roundStatusClass}`}>{roundStatusText}</span>
+                        <span>{completedRoundMatches}/{roundMatches.length} 已完成</span>
+                        <ChevronDown className={`w-5 h-5 text-gray-500 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
+                      </span>
+                    </button>
+                    {!collapsed && (
+                      <div className="space-y-4 p-4 pt-1">
+                        {Object.entries(stageGroups).sort(([a], [b]) => compareMatchStageNames(a, b)).map(([name, groupMatches]) => (
+                          <div key={`${round}-${name}`}>
+                            <div className="text-sm font-medium text-gray-700 mb-2">{name}</div>
+                            <div className="space-y-3">
                           {groupMatches.map(match => <MatchRow key={match.id} match={match} favoriteTeamIds={favoriteTeamIds} startingMatch={startingMatch} onStart={handleStartMatch} onManualStart={openManualMatch} />)}
-                        </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             {filteredMatches.length === 0 && <div className="border rounded-lg p-8 text-center text-gray-500">没有符合当前筛选条件的比赛。</div>}
           </section>
         )}
       </div>
-      {manualMatch && <ManualMatchModal match={manualMatch} game={manualGame} submitting={submittingManual} complete={manualGameComplete} rollingCount={manualRollingCount} rollAllUsed={manualRollAllUsed} anyRollStarted={manualAnyRollStarted} autoSubmit={manualAutoSubmit} saved={manualSaved} onClose={() => { clearAllManualRollTimers(); setManualAutoSubmit(false); setManualRollAllUsed(false); setManualSaved(false); setManualMatch(null); }} onRoll={rollManualSide} onRollAll={rollAllManualSides} onRequestLanding={requestManualLanding} onSubmit={submitManualMatch} getScore={getManualScore} />}
+      {manualMatch && <ManualMatchModal match={manualMatch} game={manualGame} submitting={submittingManual} complete={manualReadyToSave} normalComplete={manualGameComplete} needsPenalty={manualNeedsPenalty} penaltyComplete={penaltyComplete} penaltyKicks={penaltyKicks} penaltyDiceOpen={penaltyDiceOpen} rollingCount={manualRollingCount} rollAllUsed={manualRollAllUsed} anyRollStarted={manualAnyRollStarted} autoSubmit={manualAutoSubmit} saved={manualSaved} onClose={() => { clearAllManualRollTimers(); setManualAutoSubmit(false); setManualRollAllUsed(false); setManualSaved(false); setPenaltyKicks([]); setPenaltyDiceOpen(false); setManualMatch(null); }} onRoll={rollManualSide} onRollAll={rollAllManualSides} onRequestLanding={requestManualLanding} onPenaltyRoll={rollPenalty} onPenaltyManualRoll={openPenaltyDice} onPenaltyDiceClose={() => setPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeManualPenaltyKick(shooter, keeper); setPenaltyDiceOpen(false); }} onSubmit={submitManualMatch} getScore={getManualScore} />}
+      <FloatingScrollToolbar onTop={scrollToPageTop} onBottom={scrollToPageBottom} onNextMatch={handleJumpToNextScheduledMatch} hasNextMatch={Boolean(nextScheduledMatch)} />
     </div>
   );
 };
 
 const InfoCard: React.FC<{ icon: React.ReactNode; label: string; value: string; detail?: string }> = ({ icon, label, value, detail }) => <div className="bg-gray-50 p-4 rounded-lg"><div className="flex items-center gap-2">{icon}<span className="text-sm text-gray-600">{label}</span></div><p className="text-lg font-semibold text-gray-900 mt-1">{value}</p>{detail && <p className="text-sm text-gray-600 mt-1">{detail}</p>}</div>;
+
+const FloatingScrollToolbar: React.FC<{ onTop: () => void; onBottom: () => void; onNextMatch: () => void; hasNextMatch: boolean }> = ({ onTop, onBottom, onNextMatch, hasNextMatch }) => (
+  <div className="fixed bottom-5 right-5 z-40 flex flex-col gap-2">
+    <button type="button" onClick={onTop} className="rounded bg-gray-900 px-3 py-2 text-sm text-white shadow-lg hover:bg-gray-800">顶部</button>
+    <button type="button" onClick={onBottom} className="rounded bg-gray-900 px-3 py-2 text-sm text-white shadow-lg hover:bg-gray-800">底部</button>
+    {hasNextMatch && <button type="button" onClick={onNextMatch} className="rounded bg-blue-600 px-3 py-2 text-sm text-white shadow-lg hover:bg-blue-700">下一场</button>}
+  </div>
+);
 
 const CollapsibleSection: React.FC<{ title: string; open: boolean; onToggle: () => void; children: React.ReactNode }> = ({ title, open, onToggle, children }) => (
   <section className="mb-4 border rounded-lg">
@@ -688,7 +801,216 @@ const MatchToolbar: React.FC<{ query: string; onQueryChange: (value: string) => 
 const MatchRow: React.FC<{ match: Match; favoriteTeamIds: string[]; startingMatch: string | null; onStart: (matchId: string) => void; onManualStart: (match: Match) => void }> = ({ match, favoriteTeamIds, startingMatch, onStart, onManualStart }) => {
   const homeFavorite = match.homeTeam && favoriteTeamIds.includes(match.homeTeam.id);
   const awayFavorite = match.awayTeam && favoriteTeamIds.includes(match.awayTeam.id);
-  return <div className="border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} fallback={getMatchSideFallback(match, 'home')} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} fallback={getMatchSideFallback(match, 'away')} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">第 {match.round} 轮 - {match.bracketStage || getMatchStageName(match, {})} - {match.status === 'scheduled' ? '待进行' : match.status === 'in_progress' ? '进行中' : '已结束'}{match.resultMode === 'manual' && <span className="ml-2 text-blue-700">上帝摇骰子</span>}</p><p className="text-xs text-gray-500 mt-1">{formatMatchTime(match.scheduledAt)}{match.venue ? ` · ${match.venue}` : ''}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">点球 {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && match.homeTeam && match.awayTeam && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? '开始中...' : '自动进行'}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">掷骰子</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? '查看详情' : '查看统计'}</Link></div></div></div>;
+  return <div id={`match-${match.id}`} className="scroll-mt-6 border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} fallback={getMatchSideFallback(match, 'home')} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} fallback={getMatchSideFallback(match, 'away')} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">第 {match.round} 轮 - {match.bracketStage || getMatchStageName(match, {})} - {match.status === 'scheduled' ? '待进行' : match.status === 'in_progress' ? '进行中' : '已结束'}{match.resultMode === 'manual' && <span className="ml-2 text-blue-700">上帝摇骰子</span>}</p><p className="text-xs text-gray-500 mt-1">{formatMatchTime(match.scheduledAt)}{match.venue ? ` · ${match.venue}` : ''}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">点球 {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && match.homeTeam && match.awayTeam && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? '开始中...' : '自动进行'}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">掷骰子</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? '查看详情' : '查看统计'}</Link></div></div></div>;
+};
+
+const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; complete: boolean; submitting: boolean; saved: boolean; onRoll: () => void; onManualRoll: () => void }> = ({ match, kicks, complete, submitting, saved, onRoll, onManualRoll }) => {
+  const homeScore = getPenaltyScore(kicks, 'home');
+  const awayScore = getPenaltyScore(kicks, 'away');
+  const last = kicks[kicks.length - 1];
+  const nextSide: ManualSideKey = !last || (last.shooter !== undefined && last.keeper !== undefined) ? (kicks.length % 2 === 0 ? 'home' : 'away') : last.side;
+  const shooterTeam = nextSide === 'home' ? match.homeTeam : match.awayTeam;
+  const keeperTeam = nextSide === 'home' ? match.awayTeam : match.homeTeam;
+  const currentRound = complete ? Math.max(1, Math.ceil(kicks.length / 2)) : last && last.keeper === undefined ? Math.floor((kicks.length - 1) / 2) + 1 : Math.floor(kicks.length / 2) + 1;
+  const tiedAfterFive = kicks.length >= 10 && kicks.length % 2 === 0 && homeScore === awayScore && !complete;
+  const roundCount = Math.max(5, Math.ceil((kicks.length + (tiedAfterFive ? 1 : 0)) / 2), currentRound);
+  const message = complete ? `点球大战完成：${homeScore}-${awayScore}` : `第 ${currentRound} 轮，${shooterTeam?.name || '射门方'} 射门，${keeperTeam?.name || '守门方'} 守门`;
+  const getKick = (round: number, side: ManualSideKey) => kicks[(round - 1) * 2 + (side === 'home' ? 0 : 1)];
+  const renderScoreBalls = (count: number) => count > 0 ? Array.from({ length: count }, (_, index) => <span key={index} aria-label="点球进球">⚽</span>) : <span className="text-gray-400">-</span>;
+  const renderKick = (round: number, side: ManualSideKey) => {
+    const kick = getKick(round, side);
+    const team = side === 'home' ? match.homeTeam : match.awayTeam;
+    const isCurrentSide = !complete && round === currentRound && side === nextSide;
+    return (
+      <div className={`flex flex-col gap-2 rounded border p-3 sm:flex-row sm:items-center sm:justify-between ${isCurrentSide ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}>
+        <div className="flex items-center gap-2 min-w-0">
+          <TeamNameWithFlag team={team} flagClassName="w-5 h-4 flex-shrink-0" />
+          {isCurrentSide && <span className="text-xs text-amber-700">当前</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span>射门 {kick?.shooter ?? '-'}</span>
+          <span>扑救 {kick?.keeper ?? '-'}</span>
+          <span className={kick?.keeper === undefined ? 'text-gray-500' : kick.goal ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
+            {kick?.keeper === undefined ? '待进行' : (kick.shooter ?? 0) === 0 ? '打飞' : kick.goal ? '进球' : '扑出'}
+          </span>
+          {isCurrentSide && <button type="button" onClick={onManualRoll} disabled={submitting || saved || complete} className="rounded bg-gray-800 px-3 py-1 text-white hover:bg-gray-900 disabled:opacity-50">上帝摇骰子</button>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="mt-5 border rounded-lg p-4 bg-amber-50 border-amber-200">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h3 className="font-semibold text-amber-900">点球大战</h3>
+          <p className="text-sm text-amber-800 mt-1">射门球员先掷，守门员后掷。射门点数大于或等于守门点数即进球，否则被扑出。</p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+        <div className="rounded-lg border border-amber-200 bg-white p-3">
+          <div className="flex items-center justify-between gap-3">
+            <TeamNameWithFlag team={match.homeTeam} className="font-semibold text-gray-900" flagClassName="w-5 h-4 flex-shrink-0" />
+            <span className="text-2xl font-bold text-amber-900">{homeScore}</span>
+          </div>
+          <div className="mt-2 flex min-h-[28px] flex-wrap gap-1 text-xl">{renderScoreBalls(homeScore)}</div>
+        </div>
+        <div className="hidden items-center px-2 text-2xl font-bold text-amber-900 md:flex">:</div>
+        <div className="rounded-lg border border-amber-200 bg-white p-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-2xl font-bold text-amber-900">{awayScore}</span>
+            <TeamNameWithFlag team={match.awayTeam} className="font-semibold text-gray-900" flagClassName="w-5 h-4 flex-shrink-0" />
+          </div>
+          <div className="mt-2 flex min-h-[28px] flex-wrap justify-end gap-1 text-xl">{renderScoreBalls(awayScore)}</div>
+        </div>
+      </div>
+      <div className="sticky top-0 z-10 mt-4 flex flex-wrap items-center gap-3 rounded border border-amber-200 bg-amber-50 py-3">
+        <button type="button" onClick={onRoll} disabled={submitting || saved || complete} className="bg-amber-700 text-white px-4 py-2 rounded hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed">自动点球大战</button>
+        <span className="text-sm text-amber-900">{message}</span>
+      </div>
+      <div className="mt-4 space-y-3">
+        {Array.from({ length: roundCount }, (_, index) => {
+          const round = index + 1;
+          const isCurrent = !complete && round === currentRound;
+          return (
+            <div key={round} className={`w-full rounded-lg border p-3 ${isCurrent ? 'border-amber-300 bg-gray-100' : 'border-gray-200 bg-white'}`}>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-gray-900">
+                  {isCurrent && <span aria-label="当前轮次">⚽</span>}
+                  <span>第 {round} 轮</span>
+                </div>
+                {round > 5 && <span className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">加罚</span>}
+              </div>
+              <div className="space-y-2">
+                {renderKick(round, 'home')}
+                {renderKick(round, 'away')}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const PenaltyDiceModal: React.FC<{ title: string; onClose: () => void; onComplete: (shooter: number, keeper: number) => void }> = ({ title, onClose, onComplete }) => {
+  const [rolling, setRolling] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [shootValues, setShootValues] = useState([0, 0, 0, 0, 0, 0]);
+  const [saveValues, setSaveValues] = useState([0, 0, 0, 0, 0, 0]);
+  const [shooterDie, setShooterDie] = useState<number>();
+  const [keeperDie, setKeeperDie] = useState<number>();
+  const [shootSelectedIndex, setShootSelectedIndex] = useState<number>();
+  const [saveSelectedIndex, setSaveSelectedIndex] = useState<number>();
+  const [activePanel, setActivePanel] = useState<'shoot' | 'save'>('shoot');
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+  };
+
+  useEffect(() => () => clearTimer(), []);
+
+  const roll = (panel: 'shoot' | 'save') => {
+    if (rolling) return;
+    setRolling(true);
+    setActivePanel(panel);
+    const target = Math.floor(Math.random() * 6);
+    const totalTicks = 26 + Math.floor(Math.random() * 8);
+    const tick = (index: number) => {
+      const done = index >= totalTicks;
+      const nextIndex = done ? target : index % 6;
+      setActiveIndex(nextIndex);
+      const nextValues = Array.from({ length: 6 }, () => panel === 'shoot' ? Math.floor(Math.random() * 7) : Math.floor(Math.random() * 6) + 1);
+      if (panel === 'shoot') setShootValues(nextValues);
+      else setSaveValues(nextValues);
+      if (done) {
+        setRolling(false);
+        const die = nextValues[target];
+        if (panel === 'shoot') {
+          setShootValues(current => current.map((value, valueIndex) => valueIndex === target ? die : value));
+          setShooterDie(die);
+          setShootSelectedIndex(target);
+          setActivePanel('save');
+        } else {
+          setSaveValues(current => current.map((value, valueIndex) => valueIndex === target ? die : value));
+          setKeeperDie(die);
+          setSaveSelectedIndex(target);
+        }
+        return;
+      }
+      const progress = index / totalTicks;
+      timerRef.current = setTimeout(() => tick(index + 1), Math.round(35 + progress * progress * 170));
+    };
+    clearTimer();
+    tick(0);
+  };
+  const resultText = shooterDie !== undefined && keeperDie !== undefined
+    ? shooterDie === 0
+      ? '打飞'
+      : shooterDie >= keeperDie
+        ? '进球'
+        : '被扑出'
+    : '';
+
+  const renderBoard = (label: string, panel: 'shoot' | 'save', result?: number) => (
+    <div className={`rounded-lg border p-4 ${activePanel === panel ? 'border-amber-300 bg-amber-50' : 'bg-gray-50'}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="font-semibold text-gray-900">{label}</div>
+        <div className="text-2xl font-bold text-amber-800">{result ?? '-'}</div>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {(panel === 'shoot' ? shootValues : saveValues).map((value, index) => {
+          const selectedIndex = panel === 'shoot' ? shootSelectedIndex : saveSelectedIndex;
+          const selected = selectedIndex === index;
+          const active = activePanel === panel && activeIndex === index;
+          return (
+          <span key={`${label}-${index}`} className={`inline-flex h-14 flex-col items-center justify-center rounded border bg-white font-semibold transition-all ${selected ? 'scale-105 border-amber-500 bg-amber-100 text-amber-800 shadow-sm' : active ? 'scale-105 border-blue-500 bg-blue-100 text-blue-800 shadow-sm' : 'text-gray-900'}`}>
+            <span className="text-[10px] leading-none">{index + 1}</span>
+            <span className="slot-number-window">
+              <span className={`slot-number-strip ${rolling && activePanel === panel ? 'is-rolling' : ''}`}>
+                <span>{rolling && activePanel === panel ? ((value + 4) % 6) + 1 : value}</span>
+                <span>{value}</span>
+                <span>{rolling && activePanel === panel ? (value % 6) + 1 : value}</span>
+              </span>
+            </span>
+          </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div className="w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">上帝正在掷点球骰子</h3>
+            <p className="text-sm text-gray-600">{title}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={rolling} className="text-gray-500 hover:text-gray-800 disabled:opacity-50">关闭</button>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {renderBoard('射门', 'shoot', shooterDie)}
+          {renderBoard('扑救', 'save', keeperDie)}
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-3">
+          {resultText && <span className={`mr-auto text-lg font-bold ${resultText === '进球' ? 'text-green-700' : 'text-red-700'}`}>{resultText}</span>}
+          {shooterDie === undefined ? (
+            <button type="button" onClick={() => roll('shoot')} disabled={rolling} className="bg-amber-700 px-4 py-2 text-white rounded hover:bg-amber-800 disabled:opacity-50">{rolling ? '射门中...' : '射门'}</button>
+          ) : keeperDie !== undefined ? (
+            <button type="button" onClick={() => onComplete(shooterDie, keeperDie)} className="bg-blue-600 px-4 py-2 text-white rounded hover:bg-blue-700">关闭</button>
+          ) : (
+            <button type="button" onClick={() => roll('save')} disabled={rolling || keeperDie !== undefined} className="bg-gray-800 px-4 py-2 text-white rounded hover:bg-gray-900 disabled:opacity-50">{rolling ? '扑救中...' : '扑救'}</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const ManualMatchModal: React.FC<{
@@ -696,6 +1018,11 @@ const ManualMatchModal: React.FC<{
   game: ManualGame;
   submitting: boolean;
   complete: boolean;
+  normalComplete: boolean;
+  needsPenalty: boolean;
+  penaltyComplete: boolean;
+  penaltyKicks: PenaltyKick[];
+  penaltyDiceOpen: boolean;
   rollingCount: number;
   rollAllUsed: boolean;
   anyRollStarted: boolean;
@@ -705,14 +1032,18 @@ const ManualMatchModal: React.FC<{
   onRoll: (half: ManualHalfKey, side: ManualSideKey) => void;
   onRollAll: () => void;
   onRequestLanding: () => void;
+  onPenaltyRoll: () => void;
+  onPenaltyManualRoll: () => void;
+  onPenaltyDiceClose: () => void;
+  onPenaltyDiceComplete: (shooter: number, keeper: number) => void;
   onSubmit: () => void;
   getScore: (side: 'home' | 'away') => number;
-}> = ({ match, game, submitting, complete, rollingCount, rollAllUsed, anyRollStarted, autoSubmit, saved, onClose, onRoll, onRollAll, onRequestLanding, onSubmit, getScore }) => (
+}> = ({ match, game, submitting, complete, normalComplete, needsPenalty, penaltyComplete, penaltyKicks, penaltyDiceOpen, rollingCount, rollAllUsed, anyRollStarted, autoSubmit, saved, onClose, onRoll, onRollAll, onRequestLanding, onPenaltyRoll, onPenaltyManualRoll, onPenaltyDiceClose, onPenaltyDiceComplete, onSubmit, getScore }) => (
   <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
     <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">手动进行比赛</h2>
+          <h2 className="text-xl font-bold text-gray-900">上帝正在掷骰子</h2>
           <p className="text-sm text-gray-600 flex items-center gap-2"><TeamNameWithFlag team={match.homeTeam} flagClassName="w-4 h-3 flex-shrink-0" /><span>vs</span><TeamNameWithFlag team={match.awayTeam} flagClassName="w-4 h-3 flex-shrink-0" /></p>
         </div>
         <button onClick={onClose} className="text-gray-500 hover:text-gray-800">关闭</button>
@@ -737,7 +1068,7 @@ const ManualMatchModal: React.FC<{
         >
           立即落子
         </button>
-        <span className="text-sm text-gray-600">{saved ? '结果已保存，可关闭窗口查看比赛列表' : autoSubmit ? '四个结果全部落下后会自动保存' : rollingCount > 0 ? `${rollingCount} 个投掷正在滚动` : '可单独投掷后手动保存，也可一次性投掷并保存'}</span>
+        <span className="text-sm text-gray-600">{saved ? '结果已保存，可关闭窗口查看比赛列表' : needsPenalty ? '常规时间战平，请完成点球大战' : autoSubmit ? '四个结果全部落下后会自动保存' : rollingCount > 0 ? `${rollingCount} 个投掷正在滚动` : '可单独投掷后手动保存，也可一次性投掷并保存'}</span>
       </div>
       <div className="grid md:grid-cols-2 gap-4">
         {(['firstHalf', 'secondHalf'] as ManualHalfKey[]).map(half => (
@@ -789,10 +1120,13 @@ const ManualMatchModal: React.FC<{
           </div>
         ))}
       </div>
+      {needsPenalty && <PenaltyShootoutPanel match={match} kicks={penaltyKicks} complete={penaltyComplete} submitting={submitting} saved={saved} onRoll={onPenaltyRoll} onManualRoll={onPenaltyManualRoll} />}
+      {penaltyDiceOpen && <PenaltyDiceModal title="点球大战掷骰，落子后写入当前射门或扑救。" onClose={onPenaltyDiceClose} onComplete={onPenaltyDiceComplete} />}
+      {normalComplete && !needsPenalty && match.groupName && getScore('home') === getScore('away') && <div className="mt-4 border rounded p-3 bg-gray-50 text-sm text-gray-700">小组赛允许平局，可以直接保存。</div>}
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-        <div className="text-lg font-bold text-gray-900 flex flex-wrap items-center gap-2">当前比分：<TeamNameWithFlag team={match.homeTeam} flagClassName="w-5 h-4 flex-shrink-0" /> {getScore('home')} - {getScore('away')} <TeamNameWithFlag team={match.awayTeam} flagClassName="w-5 h-4 flex-shrink-0" /></div>
-        <button type="button" disabled={(!complete || submitting || autoSubmit) && !saved} onClick={saved ? onClose : onSubmit} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50">
-          {saved ? '关闭' : submitting ? '保存中...' : autoSubmit ? '等待自动保存' : '保存手工结果'}
+        <div className="text-lg font-bold text-gray-900 flex flex-wrap items-center gap-2">当前比分：<TeamNameWithFlag team={match.homeTeam} flagClassName="w-5 h-4 flex-shrink-0" /> {getScore('home')} - {getScore('away')} <TeamNameWithFlag team={match.awayTeam} flagClassName="w-5 h-4 flex-shrink-0" />{needsPenalty && <span className="text-sm text-amber-700">点球 {getPenaltyScore(penaltyKicks, 'home')} - {getPenaltyScore(penaltyKicks, 'away')}</span>}</div>
+        <button type="button" disabled={(!complete || submitting || (autoSubmit && !needsPenalty)) && !saved} onClick={saved ? onClose : onSubmit} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50">
+          {saved ? '关闭' : submitting ? '保存中...' : autoSubmit && !needsPenalty ? '等待自动保存' : '保存手工结果'}
         </button>
       </div>
     </div>

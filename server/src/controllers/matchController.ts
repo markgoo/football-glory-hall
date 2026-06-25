@@ -224,7 +224,7 @@ export class MatchController {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { homeScore, awayScore, manualDetails } = req.body;
+      const { homeScore, awayScore, homePenaltyScore, awayPenaltyScore, manualDetails } = req.body;
 
       const matchRepository = AppDataSource.getRepository(Match);
       const match = await matchRepository.findOne({
@@ -254,11 +254,26 @@ export class MatchController {
         return res.status(400).json({ error: 'Invalid manual score' });
       }
 
-      const penaltyResult = MatchController.shouldUsePenalties(match, {
+      const shouldUsePenalties = MatchController.shouldUsePenalties(match, {
         homeScore: normalizedHomeScore,
         awayScore: normalizedAwayScore
-      })
-        ? MatchController.generatePenaltyShootout(match.homeTeam.name, match.awayTeam.name)
+      });
+      const normalizedHomePenaltyScore = homePenaltyScore === undefined ? undefined : Number(homePenaltyScore);
+      const normalizedAwayPenaltyScore = awayPenaltyScore === undefined ? undefined : Number(awayPenaltyScore);
+      if (shouldUsePenalties && normalizedHomePenaltyScore !== undefined && normalizedAwayPenaltyScore !== undefined) {
+        if (!Number.isInteger(normalizedHomePenaltyScore) || !Number.isInteger(normalizedAwayPenaltyScore) || normalizedHomePenaltyScore < 0 || normalizedAwayPenaltyScore < 0 || normalizedHomePenaltyScore === normalizedAwayPenaltyScore) {
+          return res.status(400).json({ error: 'Invalid manual penalty score' });
+        }
+      }
+
+      const penaltyResult = shouldUsePenalties
+        ? normalizedHomePenaltyScore !== undefined && normalizedAwayPenaltyScore !== undefined
+          ? {
+              homePenaltyScore: normalizedHomePenaltyScore,
+              awayPenaltyScore: normalizedAwayPenaltyScore,
+              commentary: [`点球大战结束：${match.homeTeam.name} ${normalizedHomePenaltyScore}-${normalizedAwayPenaltyScore} ${match.awayTeam.name}`]
+            }
+          : MatchController.generatePenaltyShootout(match.homeTeam.name, match.awayTeam.name)
         : null;
 
       match.homeScore = normalizedHomeScore;

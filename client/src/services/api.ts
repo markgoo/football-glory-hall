@@ -70,7 +70,7 @@ export const matchAPI = {
   getAll: () => api.get<Match[]>('/matches'),
   getById: (id: string) => api.get<Match>(`/matches/${id}`),
   simulate: (matchId: string) => api.post(`/matches/${matchId}/simulate`),
-  manual: (matchId: string, data: { homeScore: number; awayScore: number; manualDetails: any }) =>
+  manual: (matchId: string, data: { homeScore: number; awayScore: number; homePenaltyScore?: number; awayPenaltyScore?: number; manualDetails: any }) =>
     api.post(`/matches/${matchId}/manual`, data),
   getStatistics: (matchId: string) => api.get(`/matches/${matchId}/statistics`),
   delete: (matchId: string) => api.delete(`/matches/${matchId}`),
