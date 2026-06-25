@@ -253,7 +253,7 @@ const TournamentManager: React.FC = () => {
     try {
       setCreatingWorldCup(true);
       await createTournament({
-        name: replacementTeam ? `2026 美加墨世界杯（中国替换 ${replacementTeam}）` : '2026 美加墨世界杯',
+        name: '2026 美加墨世界杯',
         description: '按 2026 FIFA World Cup 官方分组、赛程与淘汰赛骨架创建。',
         type: 'group_knockout',
         teamCategory: 'national',
@@ -399,7 +399,7 @@ const TournamentManager: React.FC = () => {
               <p className="mt-2 text-sm text-gray-600">最终选中的球队会被中国队替代，赛程位置保持不变。</p>
             </div>
             <div className="mt-4 flex gap-2">
-              <button type="button" onClick={startLuckyDraw} disabled={luckyRolling || creatingWorldCup} className="flex-1 bg-amber-600 text-white py-2 rounded hover:bg-amber-700 disabled:opacity-50">{luckyRolling ? '滚动中...' : '开始'}</button>
+              <button type="button" onClick={startLuckyDraw} disabled={luckyRolling || creatingWorldCup} className="flex-1 bg-amber-600 text-white py-2 rounded hover:bg-amber-700 disabled:opacity-50">{luckyRolling ? '滚动中...' : '开始抽取随机幸运儿'}</button>
               <button type="button" onClick={() => luckyWinner && createWorldCup2026(luckyWinner)} disabled={!luckyWinner || luckyRolling || creatingWorldCup} className="flex-1 bg-emerald-600 text-white py-2 rounded hover:bg-emerald-700 disabled:opacity-50">创建世界杯</button>
             </div>
           </div>
@@ -673,12 +673,12 @@ const TournamentManager: React.FC = () => {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {tournaments.map((tournament) => (
             <div key={tournament.id} className="bg-white rounded-lg shadow p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div>
+              <div className="flex flex-wrap justify-between items-start gap-3 mb-4">
+                <div className="min-w-0 flex-1">
                   <h3 className="text-lg font-semibold text-gray-900">{tournament.name}</h3>
                   <p className="text-sm text-gray-600 mt-1">{tournament.description}</p>
                 </div>
-                <span className={`px-2 py-1 text-xs rounded-full ${
+                <span className={`px-3 py-1 text-xs rounded-full whitespace-nowrap flex-shrink-0 ${
                   tournament.status === 'active'
                     ? 'bg-green-100 text-green-800'
                     : tournament.status === 'completed'
