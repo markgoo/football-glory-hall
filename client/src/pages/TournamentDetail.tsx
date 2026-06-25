@@ -209,6 +209,14 @@ const getMatchWinner = (match?: Match) => {
   return undefined;
 };
 
+const getChampionInfo = (tournament?: TournamentDetailData | null, finalMatch?: Match): ChampionInfo | undefined => {
+  const finalWinner = getMatchWinner(finalMatch);
+  if (finalWinner) return { name: finalWinner.name, source: 'final' };
+  if (finalMatch) return undefined;
+  if (tournament?.status === 'completed' && tournament.winner) return { name: tournament.winner, source: 'official' };
+  return undefined;
+};
+
 const TournamentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [tournament, setTournament] = useState<TournamentDetailData | null>(null);
@@ -269,11 +277,7 @@ const TournamentDetail: React.FC = () => {
   const groupStandings = useMemo(() => calculateGroupStandings(teams, matches), [teams, matches]);
   const stageLookup = useMemo(() => buildMatchStageLookup(matches), [matches]);
   const bracketColumns = useMemo(() => buildBracketColumns(matches, stageLookup), [matches, stageLookup]);
-  const championInfo = useMemo<ChampionInfo | undefined>(() => {
-    if (tournament?.winner) return { name: tournament.winner, source: 'official' };
-    const finalWinner = getMatchWinner(bracketColumns.finalMatch);
-    return finalWinner ? { name: finalWinner.name, source: 'final' } : undefined;
-  }, [bracketColumns.finalMatch, tournament?.winner]);
+  const championInfo = useMemo(() => getChampionInfo(tournament, bracketColumns.finalMatch), [bracketColumns.finalMatch, tournament]);
   const groupOptions = useMemo(() => Object.keys(groupMatchesByStage(matches, stageLookup)).sort(compareMatchStageNames), [matches, stageLookup]);
   const roundOptions = useMemo(() => Array.from(new Set(matches.map(match => match.round))).sort((a, b) => a - b), [matches]);
   const completedMatchesCount = useMemo(() => matches.filter(match => match.status === 'completed').length, [matches]);
