@@ -24,6 +24,12 @@
 - 国旗和队徽图片走后端代理，提高国内访问稳定性。
 - Docker Compose 部署，默认前端端口 `9300`。
 
+<img src="./docs/images/A1.png" alt="杯赛管理页面" width="800" />
+<img src="./docs/images/A2.png" alt="创建美加墨世界杯" width="800" />
+<img src="./docs/images/A3.png" alt="杯赛详情页面" width="800" />
+<img src="./docs/images/A4.png" alt="掷筛子" width="800" />
+
+
 ## 技术栈
 
 ### 前端
