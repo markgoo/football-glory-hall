@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { unCountryNames } from '../data/unCountries';
 
 interface Player {
   id: number;
@@ -381,6 +382,119 @@ class FootballAPIService {
   }
 
   // 获取随机球队（当API配额不足时的回退方案）
+  getNationalTeams(teamCount: number, countries?: string[]) {
+    const strengthMap: Record<string, number> = {
+      Argentina: 98, France: 97, Spain: 96, England: 95, 'United Kingdom': 95, Brazil: 95, Portugal: 94,
+      Netherlands: 93, Germany: 93, Italy: 92, Belgium: 90, Croatia: 89, Uruguay: 88,
+      Colombia: 87, Mexico: 86, USA: 85, Switzerland: 85, Denmark: 84, Austria: 83,
+      Turkey: 83, Japan: 83, 'South Korea': 82, Morocco: 82, Senegal: 81, Serbia: 81,
+      Ukraine: 81, Poland: 80, Sweden: 80, Norway: 80, Nigeria: 80, 'Ivory Coast': 79,
+      Ecuador: 79, Algeria: 79, Scotland: 79, 'Czech Republic': 79, Wales: 78,
+      Greece: 78, Iran: 78, Egypt: 78, Ghana: 78, Canada: 78, Australia: 77,
+      Romania: 77, Hungary: 77, Cameroon: 77, Russia: 76, Chile: 78, Peru: 76,
+      Tunisia: 76, 'Saudi Arabia': 76, Qatar: 76, China: 72
+    };
+    const selectedCountries = this.normalizeCountries(countries);
+    const filteredNames = unCountryNames.filter(country => this.countryMatches(country, selectedCountries));
+    const selectedNames = filteredNames.length > 0 ? filteredNames : unCountryNames;
+
+    return selectedNames
+      .map((country, index) => ({
+        team: {
+          id: 9000 + index,
+          name: country,
+          code: country.substring(0, 3).toUpperCase(),
+          country,
+          founded: 1900,
+          strength: strengthMap[country] || Math.max(55, 74 - Math.floor(index / 8)),
+          logo: null
+        },
+        players: []
+      }))
+      .sort((a, b) => (b.team.strength || 0) - (a.team.strength || 0))
+      .slice(0, teamCount);
+  }
+
+  private getLegacyNationalTeams(teamCount: number, countries?: string[]) {
+    const nationalTeams = [
+      ['Argentina', 'ARG', 'Argentina', 1901, 98], ['France', 'FRA', 'France', 1919, 97],
+      ['Spain', 'ESP', 'Spain', 1913, 96], ['England', 'ENG', 'England', 1863, 95],
+      ['Brazil', 'BRA', 'Brazil', 1914, 95], ['Portugal', 'POR', 'Portugal', 1914, 94],
+      ['Netherlands', 'NED', 'Netherlands', 1889, 93], ['Germany', 'GER', 'Germany', 1900, 93],
+      ['Italy', 'ITA', 'Italy', 1898, 92], ['Belgium', 'BEL', 'Belgium', 1895, 90],
+      ['Croatia', 'CRO', 'Croatia', 1912, 89], ['Uruguay', 'URU', 'Uruguay', 1900, 88],
+      ['Colombia', 'COL', 'Colombia', 1924, 87], ['Mexico', 'MEX', 'Mexico', 1927, 86],
+      ['USA', 'USA', 'USA', 1913, 85], ['Switzerland', 'SUI', 'Switzerland', 1895, 85],
+      ['Denmark', 'DEN', 'Denmark', 1889, 84], ['Austria', 'AUT', 'Austria', 1904, 83],
+      ['Turkey', 'TUR', 'Turkey', 1923, 83], ['Japan', 'JPN', 'Japan', 1921, 83],
+      ['South Korea', 'KOR', 'South Korea', 1933, 82], ['Morocco', 'MAR', 'Morocco', 1955, 82],
+      ['Senegal', 'SEN', 'Senegal', 1960, 81], ['Serbia', 'SRB', 'Serbia', 1919, 81],
+      ['Ukraine', 'UKR', 'Ukraine', 1991, 81], ['Poland', 'POL', 'Poland', 1919, 80],
+      ['Sweden', 'SWE', 'Sweden', 1904, 80], ['Norway', 'NOR', 'Norway', 1902, 80],
+      ['Scotland', 'SCO', 'Scotland', 1873, 79], ['Czech Republic', 'CZE', 'Czech Republic', 1901, 79],
+      ['Wales', 'WAL', 'Wales', 1876, 78], ['Greece', 'GRE', 'Greece', 1926, 78],
+      ['Australia', 'AUS', 'Australia', 1922, 77], ['Qatar', 'QAT', 'Qatar', 1960, 76],
+      ['Saudi Arabia', 'KSA', 'Saudi Arabia', 1956, 76], ['China', 'CHN', 'China', 1924, 72],
+      ['United Arab Emirates', 'UAE', 'United Arab Emirates', 1971, 72], ['Chile', 'CHI', 'Chile', 1895, 78],
+      ['Ecuador', 'ECU', 'Ecuador', 1925, 79], ['Peru', 'PER', 'Peru', 1922, 76],
+      ['Paraguay', 'PAR', 'Paraguay', 1906, 76], ['Venezuela', 'VEN', 'Venezuela', 1926, 75],
+      ['Canada', 'CAN', 'Canada', 1912, 78], ['Costa Rica', 'CRC', 'Costa Rica', 1921, 74],
+      ['Panama', 'PAN', 'Panama', 1937, 73], ['Jamaica', 'JAM', 'Jamaica', 1910, 73],
+      ['Egypt', 'EGY', 'Egypt', 1921, 78], ['Algeria', 'ALG', 'Algeria', 1962, 79],
+      ['Nigeria', 'NGA', 'Nigeria', 1945, 80], ['Ghana', 'GHA', 'Ghana', 1957, 78],
+      ['Cameroon', 'CMR', 'Cameroon', 1959, 77], ['Ivory Coast', 'CIV', 'Ivory Coast', 1960, 79],
+      ['Tunisia', 'TUN', 'Tunisia', 1957, 76], ['Mali', 'MLI', 'Mali', 1960, 76],
+      ['South Africa', 'RSA', 'South Africa', 1991, 74], ['DR Congo', 'COD', 'DR Congo', 1919, 75],
+      ['Romania', 'ROU', 'Romania', 1909, 77], ['Hungary', 'HUN', 'Hungary', 1901, 77],
+      ['Slovakia', 'SVK', 'Slovakia', 1938, 75], ['Slovenia', 'SVN', 'Slovenia', 1920, 75],
+      ['Albania', 'ALB', 'Albania', 1930, 74], ['Georgia', 'GEO', 'Georgia', 1990, 75],
+      ['Finland', 'FIN', 'Finland', 1907, 73], ['Iceland', 'ISL', 'Iceland', 1947, 73],
+      ['Ireland', 'IRL', 'Ireland', 1921, 74], ['Northern Ireland', 'NIR', 'Northern Ireland', 1880, 72],
+      ['Bosnia and Herzegovina', 'BIH', 'Bosnia and Herzegovina', 1992, 74], ['Montenegro', 'MNE', 'Montenegro', 1931, 72],
+      ['North Macedonia', 'MKD', 'North Macedonia', 1949, 72], ['Bulgaria', 'BUL', 'Bulgaria', 1923, 72],
+      ['Israel', 'ISR', 'Israel', 1928, 72], ['Iran', 'IRN', 'Iran', 1920, 78],
+      ['Iraq', 'IRQ', 'Iraq', 1948, 72], ['Uzbekistan', 'UZB', 'Uzbekistan', 1946, 73],
+      ['Jordan', 'JOR', 'Jordan', 1949, 71], ['Bahrain', 'BHR', 'Bahrain', 1957, 70],
+      ['Oman', 'OMA', 'Oman', 1978, 70], ['Thailand', 'THA', 'Thailand', 1916, 69],
+      ['Vietnam', 'VIE', 'Vietnam', 1962, 69], ['Indonesia', 'IDN', 'Indonesia', 1930, 68],
+      ['Malaysia', 'MAS', 'Malaysia', 1933, 68], ['New Zealand', 'NZL', 'New Zealand', 1891, 70],
+      ['Honduras', 'HON', 'Honduras', 1935, 70], ['El Salvador', 'SLV', 'El Salvador', 1935, 68],
+      ['Guatemala', 'GUA', 'Guatemala', 1919, 68], ['Bolivia', 'BOL', 'Bolivia', 1925, 69],
+      ['Haiti', 'HAI', 'Haiti', 1904, 68], ['Trinidad and Tobago', 'TRI', 'Trinidad and Tobago', 1908, 68],
+      ['Armenia', 'ARM', 'Armenia', 1992, 69], ['Azerbaijan', 'AZE', 'Azerbaijan', 1992, 68],
+      ['Kazakhstan', 'KAZ', 'Kazakhstan', 1992, 68], ['Cyprus', 'CYP', 'Cyprus', 1934, 68],
+      ['Estonia', 'EST', 'Estonia', 1921, 67], ['Latvia', 'LVA', 'Latvia', 1921, 67],
+      ['Lithuania', 'LTU', 'Lithuania', 1922, 67], ['Luxembourg', 'LUX', 'Luxembourg', 1908, 67],
+      ['Kosovo', 'KOS', 'Kosovo', 1946, 69], ['Moldova', 'MDA', 'Moldova', 1990, 66],
+      ['Belarus', 'BLR', 'Belarus', 1989, 68], ['Russia', 'RUS', 'Russia', 1912, 76],
+      ['Syria', 'SYR', 'Syria', 1936, 68], ['Lebanon', 'LBN', 'Lebanon', 1933, 67],
+      ['Kuwait', 'KUW', 'Kuwait', 1952, 67], ['Palestine', 'PLE', 'Palestine', 1928, 67],
+      ['Angola', 'ANG', 'Angola', 1979, 70], ['Zambia', 'ZAM', 'Zambia', 1929, 70],
+      ['Zimbabwe', 'ZIM', 'Zimbabwe', 1965, 68], ['Kenya', 'KEN', 'Kenya', 1960, 67],
+      ['Uganda', 'UGA', 'Uganda', 1924, 67], ['Tanzania', 'TAN', 'Tanzania', 1930, 66],
+      ['Guinea', 'GUI', 'Guinea', 1960, 71], ['Burkina Faso', 'BFA', 'Burkina Faso', 1960, 72],
+      ['Gabon', 'GAB', 'Gabon', 1962, 70], ['Cape Verde', 'CPV', 'Cape Verde', 1982, 72],
+      ['Mozambique', 'MOZ', 'Mozambique', 1976, 67], ['Madagascar', 'MAD', 'Madagascar', 1961, 67],
+      ['Benin', 'BEN', 'Benin', 1962, 67], ['Togo', 'TOG', 'Togo', 1960, 67],
+      ['Nicaragua', 'NCA', 'Nicaragua', 1931, 66], ['Dominican Republic', 'DOM', 'Dominican Republic', 1953, 66],
+      ['Cuba', 'CUB', 'Cuba', 1924, 66], ['Philippines', 'PHI', 'Philippines', 1907, 66],
+      ['Singapore', 'SIN', 'Singapore', 1892, 66], ['India', 'IND', 'India', 1937, 66],
+      ['Hong Kong', 'HKG', 'Hong Kong', 1914, 65], ['Chinese Taipei', 'TPE', 'Chinese Taipei', 1924, 65],
+      ['Mongolia', 'MNG', 'Mongolia', 1959, 64], ['Myanmar', 'MYA', 'Myanmar', 1947, 64],
+      ['Cambodia', 'CAM', 'Cambodia', 1933, 63], ['Laos', 'LAO', 'Laos', 1951, 63],
+      ['Pakistan', 'PAK', 'Pakistan', 1947, 63], ['Bangladesh', 'BAN', 'Bangladesh', 1972, 63],
+      ['Nepal', 'NEP', 'Nepal', 1951, 62], ['Sri Lanka', 'SRI', 'Sri Lanka', 1939, 62]
+    ];
+    const selectedCountries = this.normalizeCountries(countries);
+    const filteredTeams = nationalTeams.filter(([name, , country]) => this.countryMatches(String(country || name), selectedCountries));
+    const selectedTeams = filteredTeams.length > 0 ? filteredTeams : nationalTeams;
+
+    return selectedTeams.slice(0, teamCount).map(([name, code, country, founded, strength], index) => ({
+      team: { id: 9000 + index, name, code, country, founded, strength, logo: null },
+      players: []
+    }));
+  }
+
   async getRandomTeams(count: number, countries?: string[]) {
     const fallbackTeams = [
       ['Real Madrid', 'RMD', 'Spain', 1902, 98], ['Manchester City', 'MCI', 'England', 1880, 98],

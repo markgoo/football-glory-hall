@@ -93,8 +93,9 @@ export class TournamentController {
 
   static async getTeamPool(req: Request, res: Response) {
     try {
-      const { teamCount, teamCountries } = req.body;
+      const { teamCount, teamCountries, teamCategory } = req.body;
       const normalizedTeamCount = Number(teamCount);
+      const normalizedTeamCategory = teamCategory === 'national' ? 'national' : 'club';
       const normalizedTeamCountries = Array.isArray(teamCountries)
         ? teamCountries.map((country: unknown) => String(country).trim()).filter(Boolean)
         : undefined;
@@ -104,7 +105,9 @@ export class TournamentController {
       }
 
       const poolSize = Math.min(160, Math.max(normalizedTeamCount * 3, normalizedTeamCount + 16));
-      const apiTeams = await FootballAPIService.getPopularTeams(poolSize, normalizedTeamCountries);
+      const apiTeams = normalizedTeamCategory === 'national'
+        ? FootballAPIService.getNationalTeams(poolSize, normalizedTeamCountries)
+        : await FootballAPIService.getPopularTeams(poolSize, normalizedTeamCountries);
 
       const prioritizedTeams = [...apiTeams].sort((a: any, b: any) => {
         const aHasLogo = a.team?.logo ? 1 : 0;
@@ -122,7 +125,7 @@ export class TournamentController {
         shortName: item.team.code || item.team.name.substring(0, 3).toUpperCase(),
         country: item.team.country,
         founded: item.team.founded,
-        logo: item.team.logo || null,
+        logo: normalizedTeamCategory === 'national' ? null : item.team.logo || null,
         strength: item.team.strength || 82
       })));
     } catch (error) {
@@ -189,6 +192,7 @@ export class TournamentController {
         status: tournament.status,
         type: tournament.type,
         teamCount: tournament.teamCount,
+        teamCategory: tournament.teamCategory || 'club',
         groupSize: tournament.groupSize,
         teamCountries: tournament.teamCountries,
         startTime: tournament.startTime,
@@ -259,11 +263,12 @@ export class TournamentController {
 
   static async createTournament(req: Request, res: Response) {
     try {
-      const { name, description, type, teamCount, groupSize, teamCountries, selectedTeams, startTime } = req.body;
+      const { name, description, type, teamCount, groupSize, teamCountries, selectedTeams, startTime, teamCategory } = req.body;
       const userId = (req as any).user.id;
       const normalizedTeamCount = Number(teamCount);
       const normalizedGroupSize = type === 'group_knockout' ? Number(groupSize) : undefined;
       const normalizedStartTime = startTime ? new Date(startTime) : undefined;
+      const normalizedTeamCategory = teamCategory === 'national' ? 'national' : 'club';
       const normalizedTeamCountries = Array.isArray(teamCountries)
         ? teamCountries.map((country: unknown) => String(country).trim()).filter(Boolean)
         : undefined;
@@ -309,6 +314,7 @@ export class TournamentController {
         name,
         description,
         type,
+        teamCategory: normalizedTeamCategory,
         teamCount: normalizedTeamCount,
         groupSize: normalizedGroupSize,
         teamCountries: normalizedTeamCountries && normalizedTeamCountries.length > 0 ? normalizedTeamCountries : undefined,
@@ -340,12 +346,14 @@ export class TournamentController {
               code: team.shortName || team.code || String(team.name || '').substring(0, 3).toUpperCase(),
               country: team.country,
               founded: team.founded,
-              logo: team.logo,
+              logo: normalizedTeamCategory === 'national' ? null : team.logo,
               strength: team.strength || 82
             },
             players: []
           }))
-        : await FootballAPIService.getPopularTeams(normalizedTeamCount, normalizedTeamCountries);
+        : normalizedTeamCategory === 'national'
+          ? FootballAPIService.getNationalTeams(normalizedTeamCount, normalizedTeamCountries)
+          : await FootballAPIService.getPopularTeams(normalizedTeamCount, normalizedTeamCountries);
 
       if (apiTeams.length < normalizedTeamCount) {
         return res.status(400).json({
@@ -371,7 +379,7 @@ export class TournamentController {
           apiTeam = apiTeams[i];
           teamName = apiTeam.team.name;
           shortName = apiTeam.team.code || apiTeam.team.name.substring(0, 3).toUpperCase();
-          logo = apiTeam.team.logo || null;
+          logo = normalizedTeamCategory === 'national' ? null : apiTeam.team.logo || null;
           country = apiTeam.team.country || undefined;
           founded = apiTeam.team.founded || undefined;
 
@@ -422,6 +430,7 @@ export class TournamentController {
         description: savedTournament.description,
         status: savedTournament.status,
         type: savedTournament.type,
+        teamCategory: savedTournament.teamCategory || 'club',
         teamCount: savedTournament.teamCount,
         groupSize: savedTournament.groupSize,
         teamCountries: savedTournament.teamCountries,

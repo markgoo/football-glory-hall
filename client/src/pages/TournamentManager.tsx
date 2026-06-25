@@ -5,11 +5,13 @@ import { useTournaments } from '../contexts/TournamentContext';
 import { tournamentAPI } from '../services/api';
 import { TeamCandidate } from '../types';
 import { TeamNameWithFlag } from '../utils/flags';
+import { unCountryOptions } from '../data/unCountries';
 
 type TournamentForm = {
   name: string;
   description: string;
   type: 'knockout' | 'league' | 'group_knockout';
+  teamCategory: 'club' | 'national';
   teamCount: number;
   groupSize: number;
   teamCountries: string[];
@@ -27,6 +29,7 @@ const defaultForm: TournamentForm = {
   name: '',
   description: '',
   type: 'knockout',
+  teamCategory: 'club',
   teamCount: 16,
   groupSize: 4,
   teamCountries: [],
@@ -159,6 +162,18 @@ const TournamentManager: React.FC = () => {
       .filter(Boolean) as TeamCandidate[];
   };
   const hasEnoughTeamPool = teamPool.length >= formData.teamCount;
+  const activeCountryOptions = formData.teamCategory === 'national' ? unCountryOptions : countryOptions;
+  const activeCountryLabelMap = activeCountryOptions.reduce<Record<string, string>>((labels, country) => {
+    labels[country.value] = country.label;
+    return labels;
+  }, {});
+  const activeCountryGroups = formData.teamCategory === 'national'
+    ? [{ value: 'un', label: 'UN 国家与观察员', countries: activeCountryOptions }]
+    : countryGroups;
+  const formatActiveCountrySelection = (countries?: string[]) => {
+    if (!countries || countries.length === 0) return '全球不限';
+    return countries.map(country => activeCountryLabelMap[country] || country).join('、');
+  };
 
   const autoSelectTeams = (pool: TeamCandidate[] = teamPool) => {
     setSelectedTeamIds(
@@ -176,7 +191,8 @@ const TournamentManager: React.FC = () => {
       setLoadingTeamPool(true);
       const response = await tournamentAPI.getTeamPool({
         teamCount: formData.teamCount,
-        teamCountries: formData.teamCountries.length > 0 ? formData.teamCountries : undefined
+        teamCountries: formData.teamCountries.length > 0 ? formData.teamCountries : undefined,
+        teamCategory: formData.teamCategory
       });
 
       setTeamPool(response.data);
@@ -203,6 +219,7 @@ const TournamentManager: React.FC = () => {
         name: formData.name,
         description: formData.description,
         type: formData.type,
+        teamCategory: formData.teamCategory,
         teamCount: formData.teamCount,
         groupSize: formData.type === 'group_knockout' ? formData.groupSize : undefined,
         teamCountries: formData.teamCountries.length > 0 ? formData.teamCountries : undefined,
@@ -309,6 +326,25 @@ const TournamentManager: React.FC = () => {
             <form onSubmit={createStep === 1 ? handleLoadTeamPool : handleCreateTournament}>
               {createStep === 1 && (
                 <>
+                  <div className="grid md:grid-cols-2 gap-4 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, teamCategory: 'club', teamCountries: [] })}
+                      className={`rounded-lg border p-4 text-left transition ${formData.teamCategory === 'club' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                    >
+                      <div className="text-lg font-semibold text-gray-900">俱乐部杯赛</div>
+                      <div className="text-sm text-gray-600 mt-1">使用各大联赛俱乐部，显示国旗和队徽。</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, teamCategory: 'national', teamCountries: [] })}
+                      className={`rounded-lg border p-4 text-left transition ${formData.teamCategory === 'national' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                    >
+                      <div className="text-lg font-semibold text-gray-900">国家队杯赛</div>
+                      <div className="text-sm text-gray-600 mt-1">使用国家队，只显示国旗，不显示球队队徽。</div>
+                    </button>
+                  </div>
+
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">杯赛名称</label>
@@ -420,7 +456,7 @@ const TournamentManager: React.FC = () => {
                       </div>
 
                       <div className="grid lg:grid-cols-2 gap-4">
-                        {countryGroups.map(group => {
+                        {activeCountryGroups.map(group => {
                           const groupCountries = group.countries.map(country => country.value);
                           const selectedCount = groupCountries.filter(country => formData.teamCountries.includes(country)).length;
 
@@ -456,7 +492,7 @@ const TournamentManager: React.FC = () => {
                         })}
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">当前：{formatCountrySelection(formData.teamCountries)}</p>
+                    <p className="text-xs text-gray-500 mt-1">当前：{formatActiveCountrySelection(formData.teamCountries)}</p>
                   </div>
                 </>
               )}
@@ -467,7 +503,7 @@ const TournamentManager: React.FC = () => {
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">选择球队</h3>
                       <p className="text-sm text-gray-600">
-                        已选择 {selectedTeamIds.length} / {formData.teamCount} 支球队，范围：{formatCountrySelection(formData.teamCountries)}
+                        已选择 {selectedTeamIds.length} / {formData.teamCount} 支球队，范围：{formatActiveCountrySelection(formData.teamCountries)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">

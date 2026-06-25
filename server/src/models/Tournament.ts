@@ -5,6 +5,7 @@ import { Match } from './Match';
 
 export type TournamentStatus = 'draft' | 'active' | 'completed';
 export type TournamentType = 'league' | 'knockout' | 'group_knockout';
+export type TournamentTeamCategory = 'club' | 'national';
 
 @Entity('tournaments')
 export class Tournament {
@@ -22,6 +23,9 @@ export class Tournament {
 
   @Column({ type: 'text', default: 'knockout' })
   type: TournamentType = 'knockout';
+
+  @Column({ type: 'text', default: 'club' })
+  teamCategory: TournamentTeamCategory = 'club';
 
   @Column({ type: 'integer', default: 16 })
   teamCount: number = 16;

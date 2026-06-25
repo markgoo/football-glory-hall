@@ -476,8 +476,9 @@ const TournamentDetail: React.FC = () => {
             <span className={`px-3 py-1 text-sm rounded-full ${tournament.status === 'active' ? 'bg-green-100 text-green-800' : tournament.status === 'completed' ? 'bg-gray-100 text-gray-800' : 'bg-yellow-100 text-yellow-800'}`}>{tournament.status === 'active' ? '进行中' : tournament.status === 'completed' ? '已完成' : '草稿'}</span>
           </div>
         </div>
-        <div className="grid md:grid-cols-3 gap-4 mb-6">
+        <div className="grid md:grid-cols-4 gap-4 mb-6">
           <InfoCard icon={<Users className="w-5 h-5 text-blue-600" />} label="球队数量" value={String(tournament.teamCount)} />
+          <InfoCard icon={<Users className="w-5 h-5 text-indigo-600" />} label="参赛对象" value={tournament.teamCategory === 'national' ? '国家队' : '俱乐部'} />
           <InfoCard icon={<Calendar className="w-5 h-5 text-green-600" />} label="开始时间" value={tournament.startTime ? new Date(tournament.startTime).toLocaleString() : new Date(tournament.createdAt).toLocaleDateString()} />
           <InfoCard icon={<Trophy className="w-5 h-5 text-purple-600" />} label="杯赛类型" value={tournament.type === 'knockout' ? '淘汰赛' : tournament.type === 'league' ? '联赛' : '小组赛 + 淘汰赛'} detail={isGroupTournament && tournament.groupSize ? `${tournament.teamCount / tournament.groupSize} 组，每组 ${tournament.groupSize} 队` : undefined} />
         </div>

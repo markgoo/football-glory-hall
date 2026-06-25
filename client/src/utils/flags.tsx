@@ -1,43 +1,87 @@
 import { useState } from 'react';
 import type React from 'react';
 import { Team } from '../types';
+import { unCountryCodeMap } from '../data/unCountries';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const countryCodeMap: Record<string, string> = {
+  ...unCountryCodeMap,
   Argentina: 'ar',
   Australia: 'au',
   Austria: 'at',
   Belgium: 'be',
+  Bolivia: 'bo',
+  'Bosnia and Herzegovina': 'ba',
   Brazil: 'br',
+  Bulgaria: 'bg',
+  Cameroon: 'cm',
+  Canada: 'ca',
+  'Cape Verde': 'cv',
   Chile: 'cl',
   China: 'cn',
   Colombia: 'co',
+  'Costa Rica': 'cr',
   Croatia: 'hr',
+  Cuba: 'cu',
+  Cyprus: 'cy',
   'Czech Republic': 'cz',
   Denmark: 'dk',
+  Ecuador: 'ec',
+  Egypt: 'eg',
   England: 'gb-eng',
+  Finland: 'fi',
   France: 'fr',
   Germany: 'de',
+  Ghana: 'gh',
   Greece: 'gr',
+  Honduras: 'hn',
+  Hungary: 'hu',
+  Iceland: 'is',
+  India: 'in',
+  Indonesia: 'id',
+  Iran: 'ir',
+  Iraq: 'iq',
+  Ireland: 'ie',
+  Israel: 'il',
   Italy: 'it',
+  Jamaica: 'jm',
   Japan: 'jp',
+  Jordan: 'jo',
   Mexico: 'mx',
+  Morocco: 'ma',
   Netherlands: 'nl',
+  'New Zealand': 'nz',
+  Nigeria: 'ng',
+  'Northern Ireland': 'gb-nir',
   Norway: 'no',
+  Panama: 'pa',
+  Paraguay: 'py',
+  Peru: 'pe',
+  Poland: 'pl',
   Portugal: 'pt',
   Qatar: 'qa',
   'Saudi Arabia': 'sa',
+  Senegal: 'sn',
+  Serbia: 'rs',
   Scotland: 'gb-sct',
+  Singapore: 'sg',
+  Slovakia: 'sk',
+  Slovenia: 'si',
+  'South Africa': 'za',
   'South Korea': 'kr',
   Spain: 'es',
   Sweden: 'se',
   Switzerland: 'ch',
+  Thailand: 'th',
+  Tunisia: 'tn',
   Turkey: 'tr',
   Ukraine: 'ua',
   Uruguay: 'uy',
   USA: 'us',
   'United Arab Emirates': 'ae',
+  Venezuela: 've',
+  Vietnam: 'vn',
   Wales: 'gb-wls'
 };
 
@@ -79,7 +123,8 @@ export const TeamFlag: React.FC<{ team?: Pick<Team, 'country' | 'name'>; classNa
 };
 
 export const TeamLogo: React.FC<{ team?: Pick<Team, 'logo' | 'name'>; className?: string }> = ({ team, className = 'w-5 h-5' }) => {
-  return <RemoteImage src={team?.logo || undefined} alt={`${team?.name || 'Team'} crest`} title={team?.name || 'No crest'} className={`${className} inline-block object-contain rounded-full bg-white border border-gray-200`} fallbackClassName={`${className} inline-flex rounded-full bg-gray-100 border border-gray-300`} />;
+  if (!team?.logo) return null;
+  return <RemoteImage src={team.logo} alt={`${team?.name || 'Team'} crest`} title={team?.name || 'No crest'} className={`${className} inline-block object-contain rounded-full bg-white border border-gray-200`} fallbackClassName={`${className} inline-flex rounded-full bg-gray-100 border border-gray-300`} />;
 };
 
 export const TeamNameWithFlag: React.FC<{ team?: Pick<Team, 'name' | 'country' | 'logo'>; className?: string; flagClassName?: string; logoClassName?: string; fallback?: string }> = ({ team, className = '', flagClassName, logoClassName, fallback = '待定' }) => (

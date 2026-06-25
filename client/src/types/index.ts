@@ -50,6 +50,7 @@ export interface Tournament {
   description: string;
   status: 'draft' | 'active' | 'completed';
   type: 'league' | 'knockout' | 'group_knockout';
+  teamCategory?: 'club' | 'national';
   teamCount: number;
   groupSize?: number;
   teamCountries?: string[];
