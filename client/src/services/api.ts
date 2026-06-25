@@ -44,7 +44,7 @@ export const authAPI = {
 export const tournamentAPI = {
   getAll: () => api.get<Tournament[]>('/tournaments'),
   getById: (id: string) => api.get<Tournament>(`/tournaments/${id}`),
-  create: (data: { name: string; description: string; type: string; teamCategory?: 'club' | 'national'; teamCount: number; groupSize?: number; teamCountries?: string[]; startTime?: string; selectedTeams?: TeamCandidate[] }) =>
+  create: (data: { name: string; description: string; type: string; teamCategory?: 'club' | 'national'; realTournamentTemplate?: 'fifa_world_cup_2026'; luckyReplacement?: { replacedTeam: string; replacementTeam: string }; teamCount: number; groupSize?: number; teamCountries?: string[]; startTime?: string; selectedTeams?: TeamCandidate[] }) =>
     api.post<Tournament>('/tournaments', data),
   getTeamPool: (data: { teamCount: number; teamCountries?: string[]; teamCategory?: 'club' | 'national' }) =>
     api.post<TeamCandidate[]>('/tournaments/team-pool', data),

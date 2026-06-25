@@ -27,10 +27,25 @@ export class Match {
   @Column({ type: 'datetime', nullable: true })
   scheduledAt?: Date;
 
-  @ManyToOne(() => Team)
+  @Column({ type: 'text', nullable: true })
+  bracketStage?: string;
+
+  @Column({ type: 'text', nullable: true })
+  bracketSlot?: string;
+
+  @Column({ type: 'text', nullable: true })
+  homeSlot?: string;
+
+  @Column({ type: 'text', nullable: true })
+  awaySlot?: string;
+
+  @Column({ type: 'text', nullable: true })
+  venue?: string;
+
+  @ManyToOne(() => Team, { nullable: true })
   homeTeam!: Team;
 
-  @ManyToOne(() => Team)
+  @ManyToOne(() => Team, { nullable: true })
   awayTeam!: Team;
 
   @Column({ type: 'integer', nullable: true })

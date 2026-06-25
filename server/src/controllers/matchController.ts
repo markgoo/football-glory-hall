@@ -119,6 +119,10 @@ export class MatchController {
         return res.status(400).json({ error: 'Match already completed' });
       }
 
+      if (!match.homeTeam || !match.awayTeam) {
+        return res.status(400).json({ error: 'This scheduled slot has not been assigned teams yet' });
+      }
+
       const simulationResult = await MatchEngine.simulateMatch(match);
       const penaltyResult = MatchController.shouldUsePenalties(match, simulationResult)
         ? MatchController.generatePenaltyShootout(match.homeTeam.name, match.awayTeam.name)
@@ -187,7 +191,13 @@ export class MatchController {
         });
       }
 
-      if (freshTournament.type === 'group_knockout' && freshTournament.status !== 'completed') {
+      if (freshTournament.realTournamentTemplate) {
+        try {
+          await TournamentController.resolveRealTournamentSlots(freshTournament.id);
+        } catch (error) {
+          console.error('Error resolving real tournament slots:', error);
+        }
+      } else if (freshTournament.type === 'group_knockout' && freshTournament.status !== 'completed') {
         try {
           if (match.groupName) {
             await TournamentController.generateGroupKnockoutStage(freshTournament.id);
@@ -232,6 +242,10 @@ export class MatchController {
 
       if (match.status === 'completed') {
         return res.status(400).json({ error: 'Match already completed' });
+      }
+
+      if (!match.homeTeam || !match.awayTeam) {
+        return res.status(400).json({ error: 'This scheduled slot has not been assigned teams yet' });
       }
 
       const normalizedHomeScore = Number(homeScore);
@@ -311,6 +325,11 @@ export class MatchController {
 
     if (freshTournament.type === 'knockout' && freshTournament.status === 'active') {
       await TournamentController.generateKnockoutNextRound(freshTournament.id, match.round);
+      return;
+    }
+
+    if (freshTournament.realTournamentTemplate) {
+      await TournamentController.resolveRealTournamentSlots(freshTournament.id);
       return;
     }
 

@@ -79,11 +79,9 @@ const MatchViewer: React.FC = () => {
         <div className="bg-gray-50 rounded-lg p-6 mb-6">
           <div className="flex justify-center items-center space-x-8">
             <div className="text-center">
-              <h3 className="text-xl font-bold text-gray-900 mb-2 flex justify-center"><TeamNameWithFlag team={match.homeTeam} flagClassName="w-6 h-4 flex-shrink-0" /></h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-2 flex justify-center"><TeamNameWithFlag team={match.homeTeam} fallback={match.homeSlot || '待定'} flagClassName="w-6 h-4 flex-shrink-0" /></h3>
               <div className="text-sm text-gray-600">
-                <p>进攻: {match.homeTeam.stats.attack}</p>
-                <p>防守: {match.homeTeam.stats.defense}</p>
-                <p>中场: {match.homeTeam.stats.midfield}</p>
+                {match.homeTeam ? <><p>进攻: {match.homeTeam.stats.attack}</p><p>防守: {match.homeTeam.stats.defense}</p><p>中场: {match.homeTeam.stats.midfield}</p></> : <p>球队待定</p>}
               </div>
             </div>
 
@@ -110,11 +108,9 @@ const MatchViewer: React.FC = () => {
             </div>
 
             <div className="text-center">
-              <h3 className="text-xl font-bold text-gray-900 mb-2 flex justify-center"><TeamNameWithFlag team={match.awayTeam} flagClassName="w-6 h-4 flex-shrink-0" /></h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-2 flex justify-center"><TeamNameWithFlag team={match.awayTeam} fallback={match.awaySlot || '待定'} flagClassName="w-6 h-4 flex-shrink-0" /></h3>
               <div className="text-sm text-gray-600">
-                <p>进攻: {match.awayTeam.stats.attack}</p>
-                <p>防守: {match.awayTeam.stats.defense}</p>
-                <p>中场: {match.awayTeam.stats.midfield}</p>
+                {match.awayTeam ? <><p>进攻: {match.awayTeam.stats.attack}</p><p>防守: {match.awayTeam.stats.defense}</p><p>中场: {match.awayTeam.stats.midfield}</p></> : <p>球队待定</p>}
               </div>
             </div>
           </div>

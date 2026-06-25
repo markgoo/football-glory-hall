@@ -6,6 +6,7 @@ import { tournamentAPI } from '../services/api';
 import { TeamCandidate } from '../types';
 import { TeamNameWithFlag } from '../utils/flags';
 import { unCountryOptions } from '../data/unCountries';
+import { getCountryNameZh } from '../data/countryNamesZh';
 
 type TournamentForm = {
   name: string;
@@ -35,6 +36,16 @@ const defaultForm: TournamentForm = {
   teamCountries: [],
   startTime: getDefaultStartTime()
 };
+
+const worldCup2026Teams = [
+  'Mexico', 'South Africa', 'South Korea', 'Czech Republic', 'Canada', 'Bosnia and Herzegovina',
+  'Qatar', 'Switzerland', 'Brazil', 'Morocco', 'Haiti', 'Scotland', 'USA', 'Paraguay',
+  'Australia', 'Turkey', 'Germany', 'Curacao', 'Ivory Coast', 'Ecuador', 'Netherlands',
+  'Japan', 'Sweden', 'Tunisia', 'Belgium', 'Egypt', 'Iran', 'New Zealand', 'Spain',
+  'Cape Verde', 'Saudi Arabia', 'Uruguay', 'France', 'Senegal', 'Iraq', 'Norway',
+  'Argentina', 'Algeria', 'Austria', 'Jordan', 'Portugal', 'Democratic Republic of the Congo',
+  'Uzbekistan', 'Colombia', 'England', 'Croatia', 'Ghana', 'Panama'
+];
 
 const countryOptions = [
   { value: 'England', label: '英格兰' },
@@ -149,6 +160,11 @@ const TournamentManager: React.FC = () => {
   const [teamPool, setTeamPool] = useState<TeamCandidate[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [loadingTeamPool, setLoadingTeamPool] = useState(false);
+  const [creatingWorldCup, setCreatingWorldCup] = useState(false);
+  const [showWorldCupDialog, setShowWorldCupDialog] = useState(false);
+  const [luckyRolling, setLuckyRolling] = useState(false);
+  const [luckyCurrent, setLuckyCurrent] = useState('Mexico');
+  const [luckyWinner, setLuckyWinner] = useState<string | null>(null);
 
   useEffect(() => {
     if (error && !authError) {
@@ -233,6 +249,47 @@ const TournamentManager: React.FC = () => {
     }
   };
 
+  const createWorldCup2026 = async (replacementTeam?: string) => {
+    try {
+      setCreatingWorldCup(true);
+      await createTournament({
+        name: replacementTeam ? `2026 美加墨世界杯（中国替换 ${replacementTeam}）` : '2026 美加墨世界杯',
+        description: '按 2026 FIFA World Cup 官方分组、赛程与淘汰赛骨架创建。',
+        type: 'group_knockout',
+        teamCategory: 'national',
+        realTournamentTemplate: 'fifa_world_cup_2026',
+        luckyReplacement: replacementTeam ? { replacedTeam: replacementTeam, replacementTeam: 'China' } : undefined,
+        teamCount: 48,
+        groupSize: 4,
+        startTime: '2026-06-11T20:00:00.000Z'
+      });
+      setShowWorldCupDialog(false);
+      setLuckyWinner(null);
+    } catch (err: any) {
+      alert(err.message || '创建 2026 美加墨世界杯失败');
+    } finally {
+      setCreatingWorldCup(false);
+    }
+  };
+
+  const startLuckyDraw = () => {
+    if (luckyRolling) return;
+    setLuckyWinner(null);
+    setLuckyRolling(true);
+    let ticks = 0;
+    const totalTicks = 42 + Math.floor(Math.random() * 18);
+    const timer = window.setInterval(() => {
+      ticks += 1;
+      const nextTeam = worldCup2026Teams[Math.floor(Math.random() * worldCup2026Teams.length)];
+      setLuckyCurrent(nextTeam);
+      if (ticks >= totalTicks) {
+        window.clearInterval(timer);
+        setLuckyRolling(false);
+        setLuckyWinner(nextTeam);
+      }
+    }, 75);
+  };
+
   const toggleTeamCountry = (country: string) => {
     setFormData(current => ({
       ...current,
@@ -314,6 +371,40 @@ const TournamentManager: React.FC = () => {
           创建新杯赛
         </button>
       </div>
+
+      <div className="flex flex-wrap gap-2 mb-6">
+        <button onClick={() => setShowWorldCupDialog(true)} disabled={creatingWorldCup} className="flex items-center bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50"><Trophy className="w-5 h-5 mr-2" />一键26美加墨</button>
+      </div>
+
+      {showWorldCupDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">创建 2026 美加墨世界杯</h2>
+              <button type="button" onClick={() => setShowWorldCupDialog(false)} className="text-gray-500 hover:text-gray-700">关闭</button>
+            </div>
+            <div className="rounded-lg border bg-emerald-50 p-4 mb-4">
+              <div className="font-semibold text-gray-900">真实比赛模板</div>
+              <p className="text-sm text-gray-700 mt-1">将创建 48 支国家队、12 个小组、官方小组赛时间/场馆，以及 32 强到决赛的预设骨架。</p>
+              <button type="button" onClick={() => createWorldCup2026()} disabled={creatingWorldCup || luckyRolling} className="mt-3 bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50">
+                {creatingWorldCup ? '创建中...' : '确认创建原版世界杯'}
+              </button>
+            </div>
+            <h3 className="font-semibold text-gray-900 mb-2">随机幸运儿</h3>
+            <div className="border rounded-lg bg-gray-50 p-6 text-center">
+              <div className={`mx-auto mb-4 min-h-[80px] flex items-center justify-center rounded border bg-white ${luckyRolling ? 'animate-pulse' : ''}`}>
+                <TeamNameWithFlag team={{ name: getCountryNameZh(luckyCurrent), country: luckyCurrent, logo: null } as any} flagClassName="w-12 h-8 flex-shrink-0" />
+              </div>
+              <div className="text-2xl font-bold text-gray-900">{getCountryNameZh(luckyWinner || luckyCurrent)}</div>
+              <p className="mt-2 text-sm text-gray-600">最终选中的球队会被中国队替代，赛程位置保持不变。</p>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={startLuckyDraw} disabled={luckyRolling || creatingWorldCup} className="flex-1 bg-amber-600 text-white py-2 rounded hover:bg-amber-700 disabled:opacity-50">{luckyRolling ? '滚动中...' : '开始'}</button>
+              <button type="button" onClick={() => luckyWinner && createWorldCup2026(luckyWinner)} disabled={!luckyWinner || luckyRolling || creatingWorldCup} className="flex-1 bg-emerald-600 text-white py-2 rounded hover:bg-emerald-700 disabled:opacity-50">创建世界杯</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCreateForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

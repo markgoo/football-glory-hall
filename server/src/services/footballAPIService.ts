@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { unCountryNames } from '../data/unCountries';
+import { getCountryNameZh } from '../data/countryNamesZh';
 
 interface Player {
   id: number;
@@ -402,7 +403,7 @@ class FootballAPIService {
       .map((country, index) => ({
         team: {
           id: 9000 + index,
-          name: country,
+          name: getCountryNameZh(country),
           code: country.substring(0, 3).toUpperCase(),
           country,
           founded: 1900,

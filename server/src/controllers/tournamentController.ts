@@ -7,6 +7,8 @@ import { MatchStatistics } from '../models/MatchStatistics';
 import { HistoricalRecord } from '../models/HistoricalRecord';
 import { In, IsNull } from 'typeorm';
 import FootballAPIService from '../services/footballAPIService';
+import { realTournamentTemplates, RealTournamentTemplateId } from '../data/realTournaments';
+import { getCountryNameZh } from '../data/countryNamesZh';
 
 const normalizeTeamIdentityName = (teamName: string) => {
   const normalized = String(teamName || '')
@@ -41,6 +43,10 @@ const getTeamIdentityKey = (team: any) => {
 };
 
 export class TournamentController {
+  private static normalizeRealTemplateId(value: unknown): RealTournamentTemplateId | undefined {
+    return value === 'fifa_world_cup_2026' ? value : undefined;
+  }
+
   private static getMatchStageOrder(match: Match) {
     if (match.groupName) return TournamentController.getGroupOrder(match.groupName);
     if (match.stage === 'third_place') return 9998;
@@ -193,6 +199,8 @@ export class TournamentController {
         type: tournament.type,
         teamCount: tournament.teamCount,
         teamCategory: tournament.teamCategory || 'club',
+        realTournamentTemplate: tournament.realTournamentTemplate,
+        luckyReplacement: tournament.luckyReplacement,
         groupSize: tournament.groupSize,
         teamCountries: tournament.teamCountries,
         startTime: tournament.startTime,
@@ -223,6 +231,11 @@ export class TournamentController {
             groupName: match.groupName,
             stage: match.stage,
             scheduledAt: match.scheduledAt,
+            bracketStage: match.bracketStage,
+            bracketSlot: match.bracketSlot,
+            homeSlot: match.homeSlot,
+            awaySlot: match.awaySlot,
+            venue: match.venue,
             status: match.status,
             homeScore: match.homeScore,
             awayScore: match.awayScore,
@@ -263,8 +276,12 @@ export class TournamentController {
 
   static async createTournament(req: Request, res: Response) {
     try {
-      const { name, description, type, teamCount, groupSize, teamCountries, selectedTeams, startTime, teamCategory } = req.body;
+      const { name, description, type, teamCount, groupSize, teamCountries, selectedTeams, startTime, teamCategory, realTournamentTemplate, luckyReplacement } = req.body;
       const userId = (req as any).user.id;
+      const normalizedRealTemplate = TournamentController.normalizeRealTemplateId(realTournamentTemplate);
+      if (normalizedRealTemplate) {
+        return TournamentController.createRealTournament(req, res, normalizedRealTemplate);
+      }
       const normalizedTeamCount = Number(teamCount);
       const normalizedGroupSize = type === 'group_knockout' ? Number(groupSize) : undefined;
       const normalizedStartTime = startTime ? new Date(startTime) : undefined;
@@ -431,6 +448,8 @@ export class TournamentController {
         status: savedTournament.status,
         type: savedTournament.type,
         teamCategory: savedTournament.teamCategory || 'club',
+        realTournamentTemplate: savedTournament.realTournamentTemplate,
+        luckyReplacement: savedTournament.luckyReplacement,
         teamCount: savedTournament.teamCount,
         groupSize: savedTournament.groupSize,
         teamCountries: savedTournament.teamCountries,
@@ -454,6 +473,11 @@ export class TournamentController {
           groupName: match.groupName,
           stage: match.stage,
           scheduledAt: match.scheduledAt,
+          bracketStage: match.bracketStage,
+          bracketSlot: match.bracketSlot,
+          homeSlot: match.homeSlot,
+          awaySlot: match.awaySlot,
+          venue: match.venue,
           status: match.status,
           homePenaltyScore: match.homePenaltyScore,
           awayPenaltyScore: match.awayPenaltyScore,
@@ -621,6 +645,95 @@ export class TournamentController {
 
     TournamentController.assignMatchSchedule(matches, tournament.startTime);
     return matchRepository.save(matches);
+  }
+
+  private static async createRealTournament(req: Request, res: Response, templateId: RealTournamentTemplateId) {
+    const { name, description, luckyReplacement } = req.body;
+    const userId = (req as any).user.id;
+    const template = realTournamentTemplates[templateId];
+    const tournamentRepository = AppDataSource.getRepository(Tournament);
+    const teamRepository = AppDataSource.getRepository(Team);
+    const matchRepository = AppDataSource.getRepository(Match);
+
+    const replacement = luckyReplacement?.replacedTeam
+      ? { replacedTeam: String(luckyReplacement.replacedTeam), replacementTeam: 'China' }
+      : undefined;
+    const replaceTeamName = (teamName: string) => replacement && teamName === replacement.replacedTeam ? replacement.replacementTeam : getCountryNameZh(teamName);
+    const replaceCountryName = (countryName: string) => replacement && countryName === replacement.replacedTeam ? 'China' : countryName;
+
+    const tournament = await tournamentRepository.save(tournamentRepository.create({
+      name: name || template.name,
+      description: description || template.description,
+      type: 'group_knockout',
+      teamCategory: 'national',
+      realTournamentTemplate: templateId,
+      luckyReplacement: replacement,
+      teamCount: template.teamCount,
+      groupSize: template.groupSize,
+      startTime: new Date(template.matches[0].date),
+      user: { id: userId }
+    }));
+
+    const teams = template.teams.map(templateTeam => {
+      const finalName = replaceTeamName(templateTeam.name);
+      const finalCountry = replaceCountryName(templateTeam.country);
+      return teamRepository.create({
+        name: finalName,
+        shortName: finalName === 'China' ? 'CHN' : templateTeam.code,
+        country: finalCountry,
+        groupName: templateTeam.groupName,
+        stats: TournamentController.createStatsFromStrength(finalName === 'China' ? 72 : templateTeam.strength),
+        tournament
+      });
+    });
+    const savedTeams = await teamRepository.save(teams);
+    const teamByName = new Map(savedTeams.map(team => [team.name, team]));
+
+    const matches = template.matches.map(templateMatch => {
+      const homeName = replaceTeamName(templateMatch.home);
+      const awayName = replaceTeamName(templateMatch.away);
+      const homeTeam = teamByName.get(homeName);
+      const awayTeam = teamByName.get(awayName);
+      if (!homeTeam || !awayTeam) {
+        throw new Error(`Invalid real tournament template match: ${homeName} vs ${awayName}`);
+      }
+      const match = TournamentController.createMatch(tournament, homeTeam, awayTeam, templateMatch.round, templateMatch.groupName);
+      match.scheduledAt = new Date(templateMatch.date);
+      match.venue = templateMatch.venue;
+      return match;
+    });
+    const bracketMatches = template.bracket.map(templateMatch => {
+      const match = new Match();
+      match.round = templateMatch.round;
+      match.status = 'scheduled';
+      match.bracketStage = templateMatch.bracketStage;
+      match.bracketSlot = templateMatch.bracketSlot;
+      match.homeSlot = templateMatch.homeSlot;
+      match.awaySlot = templateMatch.awaySlot;
+      match.scheduledAt = new Date(templateMatch.date);
+      match.venue = templateMatch.venue;
+      match.tournament = tournament;
+      return match;
+    });
+    const savedMatches = await matchRepository.save([...matches, ...bracketMatches]);
+
+    res.status(201).json({
+      id: tournament.id,
+      name: tournament.name,
+      description: tournament.description,
+      status: tournament.status,
+      type: tournament.type,
+      teamCategory: tournament.teamCategory,
+      realTournamentTemplate: tournament.realTournamentTemplate,
+      luckyReplacement: tournament.luckyReplacement,
+      teamCount: tournament.teamCount,
+      groupSize: tournament.groupSize,
+      startTime: tournament.startTime,
+      currentRound: tournament.currentRound,
+      createdAt: tournament.createdAt,
+      teams: savedTeams,
+      matches: savedMatches
+    });
   }
 
   private static isPowerOfTwo(value: number): boolean {
@@ -832,6 +945,19 @@ export class TournamentController {
       return [];
     }
 
+    const standingsByGroup = TournamentController.calculateGroupStandings(tournament.teams || [], groupMatches);
+    const groupNames = Object.keys(standingsByGroup).sort((a, b) => TournamentController.compareGroupNames(a, b));
+
+    if (tournament.realTournamentTemplate === 'fifa_world_cup_2026') {
+      const updatedMatches = await TournamentController.resolveRealTournamentBracket(tournament, standingsByGroup, groupNames);
+      await tournamentRepository.update(tournament.id, {
+        currentRound: 4,
+        status: 'active'
+      });
+
+      return updatedMatches;
+    }
+
     const existingKnockoutMatches = await matchRepository.count({
       where: {
         tournament: { id: tournamentId },
@@ -843,8 +969,6 @@ export class TournamentController {
       return [];
     }
 
-    const standingsByGroup = TournamentController.calculateGroupStandings(tournament.teams || [], groupMatches);
-    const groupNames = Object.keys(standingsByGroup).sort((a, b) => TournamentController.compareGroupNames(a, b));
     const groupWinners: Team[] = [];
     const groupRunnersUp: Team[] = [];
 
@@ -853,7 +977,6 @@ export class TournamentController {
       if (standings.length < 2) {
         return [];
       }
-
       groupWinners.push(standings[0].team);
       groupRunnersUp.push(standings[1].team);
     }
@@ -882,6 +1005,137 @@ export class TournamentController {
     });
 
     return savedMatches;
+  }
+
+  static async resolveRealTournamentSlots(tournamentId: string): Promise<Match[]> {
+    const tournamentRepository = AppDataSource.getRepository(Tournament);
+    const tournament = await tournamentRepository.findOne({
+      where: { id: tournamentId },
+      relations: ['teams']
+    });
+    if (!tournament?.realTournamentTemplate) return [];
+    return TournamentController.resolveRealTournamentBracket(tournament);
+  }
+
+  private static getFifaWorldCup2026Qualifiers(standingsByGroup: Record<string, Array<{
+    team: Team;
+    played: number;
+    points: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    goalsFor: number;
+    goalsAgainst: number;
+    goalDifference: number;
+  }>>, groupNames: string[]) {
+    const topTwo = groupNames.flatMap(groupName => standingsByGroup[groupName].slice(0, 2).map(row => row.team));
+    const bestThird = groupNames
+      .map(groupName => standingsByGroup[groupName][2])
+      .filter(Boolean)
+      .sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || b.wins - a.wins || a.team.name.localeCompare(b.team.name))
+      .slice(0, 8)
+      .map(row => row.team);
+
+    return [...topTwo, ...bestThird];
+  }
+
+  private static getMatchWinnerTeam(match: Match) {
+    if (!match.homeTeam || !match.awayTeam || match.status !== 'completed') return undefined;
+    const result = TournamentController.getKnockoutResult(match);
+    return result.winner;
+  }
+
+  private static getMatchLoserTeam(match: Match) {
+    if (!match.homeTeam || !match.awayTeam || match.status !== 'completed') return undefined;
+    const result = TournamentController.getKnockoutResult(match);
+    return result.loser;
+  }
+
+  private static resolveGroupSlot(slot: string, standingsByGroup: Record<string, Array<{
+    team: Team;
+    played: number;
+    points: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    goalsFor: number;
+    goalsAgainst: number;
+    goalDifference: number;
+  }>>, bestThirdByGroup: Map<string, Team>) {
+    const direct = slot.match(/^([123])([A-L])$/);
+    if (direct) {
+      const [, position, groupLetter] = direct;
+      return standingsByGroup[`${groupLetter}组`]?.[Number(position) - 1]?.team;
+    }
+
+    const thirdCandidate = slot.match(/^3([A-L](?:\/[A-L])*)$/);
+    if (thirdCandidate) {
+      const groups = thirdCandidate[1].split('/');
+      for (const groupLetter of groups) {
+        const team = bestThirdByGroup.get(`${groupLetter}组`);
+        if (team) return team;
+      }
+    }
+
+    return undefined;
+  }
+
+  private static async resolveRealTournamentBracket(tournament: Tournament, standingsByGroup?: Record<string, Array<{
+    team: Team;
+    played: number;
+    points: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    goalsFor: number;
+    goalsAgainst: number;
+    goalDifference: number;
+  }>>, groupNames?: string[]) {
+    const matchRepository = AppDataSource.getRepository(Match);
+    const matches = await matchRepository.find({
+      where: { tournament: { id: tournament.id } },
+      relations: ['homeTeam', 'awayTeam']
+    });
+    const slotMatches = matches.filter(match => match.bracketSlot);
+    if (slotMatches.length === 0) return [];
+
+    const groupMatches = matches.filter(match => match.groupName);
+    const standings = standingsByGroup || TournamentController.calculateGroupStandings(tournament.teams || [], groupMatches);
+    const sortedGroupNames = groupNames || Object.keys(standings).sort((a, b) => TournamentController.compareGroupNames(a, b));
+    const bestThirdRows = sortedGroupNames
+      .map(groupName => ({ groupName, row: standings[groupName]?.[2] }))
+      .filter((item): item is { groupName: string; row: NonNullable<typeof item.row> } => !!item.row)
+      .sort((a, b) => b.row.points - a.row.points || b.row.goalDifference - a.row.goalDifference || b.row.goalsFor - a.row.goalsFor || b.row.wins - a.row.wins || a.row.team.name.localeCompare(b.row.team.name))
+      .slice(0, 8);
+    const bestThirdByGroup = new Map(bestThirdRows.map(item => [item.groupName, item.row.team]));
+    const matchBySlot = new Map(slotMatches.map(match => [match.bracketSlot as string, match]));
+
+    const resolveSlot = (slot?: string): Team | undefined => {
+      if (!slot) return undefined;
+      const winnerSlot = slot.match(/^W\s+(.+)$/);
+      if (winnerSlot) return TournamentController.getMatchWinnerTeam(matchBySlot.get(winnerSlot[1]) as Match);
+      const loserSlot = slot.match(/^L\s+(.+)$/);
+      if (loserSlot) return TournamentController.getMatchLoserTeam(matchBySlot.get(loserSlot[1]) as Match);
+      return TournamentController.resolveGroupSlot(slot, standings, bestThirdByGroup);
+    };
+
+    const updated: Match[] = [];
+    for (const match of slotMatches.sort((a, b) => a.round - b.round)) {
+      const homeTeam = resolveSlot(match.homeSlot);
+      const awayTeam = resolveSlot(match.awaySlot);
+      let changed = false;
+      if (homeTeam && match.homeTeam?.id !== homeTeam.id) {
+        match.homeTeam = homeTeam;
+        changed = true;
+      }
+      if (awayTeam && match.awayTeam?.id !== awayTeam.id) {
+        match.awayTeam = awayTeam;
+        changed = true;
+      }
+      if (changed) updated.push(match);
+    }
+
+    return updated.length > 0 ? matchRepository.save(updated) : [];
   }
 
   private static calculateGroupStandings(teams: Team[], matches: Match[]) {

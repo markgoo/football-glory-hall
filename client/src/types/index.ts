@@ -51,6 +51,8 @@ export interface Tournament {
   status: 'draft' | 'active' | 'completed';
   type: 'league' | 'knockout' | 'group_knockout';
   teamCategory?: 'club' | 'national';
+  realTournamentTemplate?: 'fifa_world_cup_2026';
+  luckyReplacement?: { replacedTeam: string; replacementTeam: string };
   teamCount: number;
   groupSize?: number;
   teamCountries?: string[];
@@ -67,9 +69,14 @@ export interface Match {
   groupName?: string;
   stage?: 'third_place';
   scheduledAt?: string;
+  bracketStage?: string;
+  bracketSlot?: string;
+  homeSlot?: string;
+  awaySlot?: string;
+  venue?: string;
   status: 'scheduled' | 'in_progress' | 'completed';
-  homeTeam: Team;
-  awayTeam: Team;
+  homeTeam?: Team;
+  awayTeam?: Team;
   tournament: Tournament;
   homeScore?: number;
   awayScore?: number;
