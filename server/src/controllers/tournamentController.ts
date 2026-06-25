@@ -1126,6 +1126,41 @@ export class TournamentController {
     return undefined;
   }
 
+  private static buildBestThirdSlotAssignments(slotMatches: Match[], bestThirdByGroup: Map<string, Team>) {
+    const thirdSlots = slotMatches
+      .flatMap(match => [match.homeSlot, match.awaySlot])
+      .filter((slot): slot is string => !!slot && /^3([A-L](?:\/[A-L])*)$/.test(slot));
+    const uniqueSlots = Array.from(new Set(thirdSlots)).map(slot => {
+      const groups = slot.replace(/^3/, '').split('/').map(groupLetter => `${groupLetter}组`);
+      return {
+        slot,
+        candidates: groups
+          .map(groupName => bestThirdByGroup.get(groupName))
+          .filter((team): team is Team => !!team)
+      };
+    }).sort((a, b) => a.candidates.length - b.candidates.length);
+
+    const assignments = new Map<string, Team>();
+    const usedTeamIds = new Set<string>();
+
+    const search = (index: number): boolean => {
+      if (index >= uniqueSlots.length) return true;
+      const current = uniqueSlots[index];
+      for (const team of current.candidates) {
+        if (usedTeamIds.has(team.id)) continue;
+        assignments.set(current.slot, team);
+        usedTeamIds.add(team.id);
+        if (search(index + 1)) return true;
+        assignments.delete(current.slot);
+        usedTeamIds.delete(team.id);
+      }
+      return false;
+    };
+
+    search(0);
+    return assignments;
+  }
+
   private static async resolveRealTournamentBracket(tournament: Tournament, standingsByGroup?: Record<string, Array<{
     team: Team;
     played: number;
@@ -1163,6 +1198,7 @@ export class TournamentController {
       .slice(0, 8);
     const bestThirdByGroup = allGroupsComplete ? new Map(bestThirdRows.map(item => [item.groupName, item.row.team])) : new Map<string, Team>();
     const matchBySlot = new Map(slotMatches.map(match => [match.bracketSlot as string, match]));
+    const bestThirdSlotAssignments = TournamentController.buildBestThirdSlotAssignments(slotMatches, bestThirdByGroup);
     const usedTeamIds = new Set<string>();
 
     const resolveSlot = (slot?: string): Team | undefined => {
@@ -1171,6 +1207,9 @@ export class TournamentController {
       if (winnerSlot) return TournamentController.getMatchWinnerTeam(matchBySlot.get(winnerSlot[1]) as Match);
       const loserSlot = slot.match(/^L\s+(.+)$/);
       if (loserSlot) return TournamentController.getMatchLoserTeam(matchBySlot.get(loserSlot[1]) as Match);
+      if (/^3([A-L](?:\/[A-L])*)$/.test(slot) && bestThirdSlotAssignments.has(slot)) {
+        return bestThirdSlotAssignments.get(slot);
+      }
       return TournamentController.resolveGroupSlot(slot, standings, bestThirdByGroup, completedGroupNames, usedTeamIds);
     };
 
