@@ -1,0 +1,27 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    env_file:
+      - ./server/.env
+    environment:
+      PORT: 5005
+      NODE_ENV: development
+      DB_PATH: /app/server/data/database.sqlite
+      CLIENT_URL: http://localhost:3000
+    volumes:
+      - ./server/data:/app/server/data
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+      args:
+        VITE_API_URL: /api
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+    restart: unless-stopped

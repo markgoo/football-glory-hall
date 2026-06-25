@@ -1,0 +1,21 @@
+{
+  "name": "football-glory-hall",
+  "version": "1.0.0",
+  "description": "A web-based football manager game with tournament simulation",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "cd server && npm run dev",
+    "client:dev": "cd client && npm run dev",
+    "build": "npm run client:build && npm run server:build",
+    "client:build": "cd client && npm run build",
+    "server:build": "cd server && npm run build",
+    "start": "cd server && npm start"
+  },
+  "keywords": ["football", "manager", "game", "tournament"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
