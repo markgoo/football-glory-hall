@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { TeamCandidate, Tournament } from '../types';
 import { tournamentAPI } from '../services/api';
+import { useAuth } from './AuthContext';
 
 interface TournamentContextType {
   tournaments: Tournament[];
@@ -24,20 +25,23 @@ export const useTournaments = () => {
 };
 
 export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { token, user } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasFetched, setHasFetched] = useState(false);
 
   const fetchTournaments = async () => {
-    if (hasFetched) return; // Prevent duplicate fetches
+    if (!localStorage.getItem('token')) {
+      setTournaments([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setError(null);
     try {
       const response = await tournamentAPI.getAll();
       setTournaments(response.data);
-      setHasFetched(true);
     } catch (error: any) {
       setError(error.response?.data?.error || 'Failed to fetch tournaments');
     } finally {
@@ -47,8 +51,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const createTournament = async (data: { name: string; description: string; type: string; teamCount: number; groupSize?: number; teamCountries?: string[]; selectedTeams?: TeamCandidate[] }) => {
     try {
-      const response = await tournamentAPI.create(data);
-      setTournaments([...tournaments, response.data]);
+      await tournamentAPI.create(data);
+      await fetchTournaments();
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to create tournament');
     }
@@ -56,8 +60,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const updateTournament = async (id: string, data: Partial<Tournament>) => {
     try {
-      const response = await tournamentAPI.update(id, data);
-      setTournaments(tournaments.map(t => t.id === id ? response.data : t));
+      await tournamentAPI.update(id, data);
+      await fetchTournaments();
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to update tournament');
     }
@@ -67,13 +71,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       console.log('Deleting tournament:', id);
       await tournamentAPI.delete(id);
-      console.log('Tournament deleted from API, updating state...');
-      setTournaments(prevTournaments => {
-        const updated = prevTournaments.filter(t => t.id !== id);
-        console.log('Updated tournaments list:', updated.length, 'items');
-        return updated;
-      });
-      console.log('State updated successfully');
+      await fetchTournaments();
     } catch (error: any) {
       console.error('Delete tournament error:', error);
       throw new Error(error.response?.data?.error || 'Failed to delete tournament');
@@ -82,25 +80,31 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const startTournament = async (id: string) => {
     try {
-      const response = await tournamentAPI.start(id);
-      setTournaments(tournaments.map(t => t.id === id ? response.data : t));
+      await tournamentAPI.start(id);
+      await fetchTournaments();
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to start tournament');
     }
   };
 
   useEffect(() => {
-    // Check if user is logged in (has token)
-    const token = localStorage.getItem('token');
-    if (token && !hasFetched) {
-      // Only fetch tournaments if user is logged in
+    if (token && user?.id) {
       fetchTournaments();
-    } else if (!token) {
-      // If no token, mark as fetched to prevent retries
-      setHasFetched(true);
+    } else {
+      setTournaments([]);
       setLoading(false);
     }
-  }, [hasFetched]);
+  }, [token, user?.id]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && localStorage.getItem('token')) {
+        fetchTournaments();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   const value = {
     tournaments,
