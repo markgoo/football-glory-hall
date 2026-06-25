@@ -150,6 +150,31 @@ docker compose logs -f
 curl http://localhost:9300/api/health
 ```
 
+### 默认管理员
+
+系统启动时会自动创建默认管理员账号。如果 `admin` 已存在，不会覆盖已有密码。
+
+默认登录信息：
+
+```text
+用户名：admin
+密码：123456
+```
+
+如果需要在后台手动创建或重置 `admin` 密码，可以在项目目录执行：
+
+```bash
+docker compose exec server node -e 'const bcrypt=require("bcryptjs");const sqlite3=require("sqlite3").verbose();const db=new sqlite3.Database("/app/server/data/database.sqlite");const now=new Date().toISOString();const hash=bcrypt.hashSync("123456",10);const id="admin-"+Date.now();db.run("INSERT INTO users(id,username,email,password,isActive,isDeleted,role,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(username) DO UPDATE SET email=excluded.email,password=excluded.password,isActive=1,isDeleted=0,role='\''admin'\'',updatedAt=excluded.updatedAt",[id,"admin","admin@example.com",hash,1,0,"admin",now,now],function(e){if(e){console.error(e);process.exit(1)}console.log("admin ready: admin / 123456");db.close();});'
+```
+
+### 修改用户密码
+
+如果需要在服务器后台修改任意用户密码，可以在项目目录执行下面命令。把 `admin` 和 `NewPassword123` 改成目标用户名和新密码：
+
+```bash
+docker compose exec -e TARGET_USER=admin -e NEW_PASSWORD=NewPassword123 server node -e 'const bcrypt=require("bcryptjs");const sqlite3=require("sqlite3").verbose();const username=process.env.TARGET_USER;const password=process.env.NEW_PASSWORD;if(!username||!password){console.error("TARGET_USER and NEW_PASSWORD are required");process.exit(1)}const db=new sqlite3.Database("/app/server/data/database.sqlite");const hash=bcrypt.hashSync(password,10);db.run("UPDATE users SET password=?,updatedAt=? WHERE username=? AND isDeleted=0",[hash,new Date().toISOString(),username],function(e){if(e){console.error(e);process.exit(1)}if(this.changes===0){console.error("user not found:",username);process.exit(1)}console.log("password updated:",username);db.close();});'
+```
+
 ## 常用命令
 
 ### 构建

@@ -38,6 +38,8 @@ export const authAPI = {
   login: (credentials: { identifier: string; password: string }) =>
     api.post<AuthResponse>('/auth/login', credentials),
   getProfile: () => api.get<{ user: User }>('/auth/profile'),
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    api.post('/auth/change-password', data),
 };
 
 // Tournament API

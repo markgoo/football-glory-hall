@@ -44,6 +44,15 @@ export class AdminController {
         return res.status(404).json({ error: 'User not found' });
       }
 
+      if (user.username === 'admin') {
+        if (isActive === false) {
+          return res.status(400).json({ error: 'Built-in admin cannot be deactivated' });
+        }
+        if (role && role !== 'admin') {
+          return res.status(400).json({ error: 'Built-in admin cannot be changed to a normal user' });
+        }
+      }
+
       if (req.user?.id === user.id && isActive === false) {
         return res.status(400).json({ error: 'You cannot deactivate your own account' });
       }
@@ -111,6 +120,10 @@ export class AdminController {
 
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
+      }
+
+      if (user.username === 'admin') {
+        return res.status(400).json({ error: 'Built-in admin cannot be deleted' });
       }
 
       user.isActive = false;

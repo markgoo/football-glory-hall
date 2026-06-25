@@ -132,4 +132,39 @@ export class AuthController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  static async changePassword(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user.id;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: 'Current password and new password are required' });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      }
+
+      const userRepository = AppDataSource.getRepository(User);
+      const user = await userRepository.findOne({ where: { id: userId } });
+
+      if (!user || !user.isActive || user.isDeleted) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!isValidPassword) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+
+      user.password = await bcrypt.hash(newPassword, 12);
+      await userRepository.save(user);
+
+      res.json({ message: 'Password changed successfully' });
+    } catch (error) {
+      console.error('Change password error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }
