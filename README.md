@@ -67,6 +67,38 @@ FOOTBALL_API_URL=https://v3.football.api-sports.io
 
 `FOOTBALL_API_KEY` 可选。没有 API key 时，系统仍可使用内置球队/国家队数据。
 
+这两个 Football API 配置的作用：
+
+- `FOOTBALL_API_KEY`：API-Football 的访问密钥，用于获取真实俱乐部球队、国家、队徽等数据。
+- `FOOTBALL_API_URL`：API-Football 的接口地址，默认使用 `https://v3.football.api-sports.io`。
+
+如果不配置 `FOOTBALL_API_KEY`：
+
+- 俱乐部杯赛会使用项目内置的俱乐部候选数据。
+- 部分俱乐部可能没有真实队徽。
+- 国家队杯赛、UN 国家列表、2026 美加墨世界杯模板不依赖这个 API，仍然可以正常使用。
+
+获取 `FOOTBALL_API_KEY`：
+
+1. 打开 API-Football 官网：https://www.api-football.com/
+2. 注册并登录账号。
+3. 进入 Dashboard / API Keys 页面。
+4. 复制平台分配的 API key。
+5. 把 key 填入项目根目录 `.env`：
+
+```env
+FOOTBALL_API_KEY=你的API_KEY
+FOOTBALL_API_URL=https://v3.football.api-sports.io
+```
+
+6. 重启后端或重新构建 Docker：
+
+```bash
+docker compose up -d --build
+```
+
+注意：不要把真实 API key 提交到 GitHub，`.env` 文件应保持在 `.gitignore` 中。
+
 ### 启动开发服务
 
 ```bash
