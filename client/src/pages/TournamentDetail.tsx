@@ -458,15 +458,15 @@ const TournamentDetail: React.FC = () => {
     setPenaltyKicks(current => {
       const last = current[current.length - 1];
       if (!last || (last.shooter !== undefined && last.keeper !== undefined)) {
-        const nextDie = forcedDie ?? rollPenaltyShotDie();
+        const nextDie = typeof forcedDie === 'number' ? forcedDie : rollPenaltyShotDie();
         return [...current, { side: current.length % 2 === 0 ? 'home' : 'away', shooter: nextDie }];
       }
       if (last.shooter === undefined) {
-        const nextDie = forcedDie ?? rollPenaltyShotDie();
+        const nextDie = typeof forcedDie === 'number' ? forcedDie : rollPenaltyShotDie();
         return current.map((kick, index) => index === current.length - 1 ? { ...kick, shooter: nextDie } : kick);
       }
       if (last.keeper === undefined) {
-        const keeper = forcedDie ?? rollPenaltySaveDie();
+        const keeper = typeof forcedDie === 'number' ? forcedDie : rollPenaltySaveDie();
         return current.map((kick, index) => index === current.length - 1 ? { ...kick, keeper, goal: (kick.shooter ?? 0) > 0 && (kick.shooter ?? 0) >= keeper } : kick);
       }
       return current;
@@ -865,7 +865,7 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
         </div>
       </div>
       <div className="sticky top-0 z-10 mt-4 flex flex-wrap items-center gap-3 rounded border border-amber-200 bg-amber-50 py-3">
-        <button type="button" onClick={onRoll} disabled={submitting || saved || complete} className="bg-amber-700 text-white px-4 py-2 rounded hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed">自动点球大战</button>
+        <button type="button" onClick={() => onRoll()} disabled={submitting || saved || complete} className="bg-amber-700 text-white px-4 py-2 rounded hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed">自动点球大战</button>
         <span className="text-sm text-amber-900">{message}</span>
       </div>
       <div className="mt-4 space-y-3">
