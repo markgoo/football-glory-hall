@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Eye, Play, Plus, Trash2, Trophy } from 'lucide-react';
 import { useTournaments } from '../contexts/TournamentContext';
 import { tournamentAPI } from '../services/api';
-import { TeamCandidate } from '../types';
+import { TeamCandidate, Tournament } from '../types';
 import { TeamNameWithFlag } from '../utils/flags';
 import { unCountryOptions } from '../data/unCountries';
 import { getCountryNameZh } from '../data/countryNamesZh';
@@ -35,6 +35,12 @@ const defaultForm: TournamentForm = {
   groupSize: 4,
   teamCountries: [],
   startTime: getDefaultStartTime()
+};
+
+const isTournamentFullyCompleted = (tournament: Tournament) => {
+  if (tournament.status === 'completed') return true;
+  const playableMatches = (tournament.matches || []).filter(match => match.homeTeam && match.awayTeam);
+  return playableMatches.length > 0 && playableMatches.every(match => match.status === 'completed');
 };
 
 const worldCup2026Teams = [
@@ -671,7 +677,9 @@ const TournamentManager: React.FC = () => {
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {tournaments.map((tournament) => (
+          {tournaments.map((tournament) => {
+            const fullyCompleted = isTournamentFullyCompleted(tournament);
+            return (
             <div key={tournament.id} className="bg-white rounded-lg shadow p-6">
               <div className="flex flex-wrap justify-between items-start gap-3 mb-4">
                 <div className="min-w-0 flex-1">
@@ -679,13 +687,13 @@ const TournamentManager: React.FC = () => {
                   <p className="text-sm text-gray-600 mt-1">{tournament.description}</p>
                 </div>
                 <span className={`px-3 py-1 text-xs rounded-full whitespace-nowrap flex-shrink-0 ${
-                  tournament.status === 'active'
-                    ? 'bg-green-100 text-green-800'
-                    : tournament.status === 'completed'
+                  fullyCompleted
                     ? 'bg-gray-100 text-gray-800'
+                    : tournament.status === 'active'
+                    ? 'bg-green-100 text-green-800'
                     : 'bg-yellow-100 text-yellow-800'
                 }`}>
-                  {tournament.status === 'active' ? '进行中' : tournament.status === 'completed' ? '已完成' : '草稿'}
+                  {fullyCompleted ? '全部结束' : tournament.status === 'active' ? '进行中' : '草稿'}
                 </span>
               </div>
 
@@ -739,7 +747,7 @@ const TournamentManager: React.FC = () => {
                 </button>
               </div>
             </div>
-          ))}
+          );})}
 
           {tournaments.length === 0 && (
             <div className="col-span-full text-center py-12">

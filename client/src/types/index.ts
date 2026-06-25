@@ -60,6 +60,7 @@ export interface Tournament {
   currentRound: number;
   winner?: string;
   teams: Team[];
+  matches?: Match[];
   createdAt: string;
 }
 

@@ -331,7 +331,8 @@ export class MatchController {
   private static async advanceTournamentAfterMatch(match: Match) {
     const tournamentRepository = AppDataSource.getRepository(Tournament);
     const freshTournament = await tournamentRepository.findOne({
-      where: { id: match.tournament.id }
+      where: { id: match.tournament.id },
+      relations: ['matches', 'matches.homeTeam', 'matches.awayTeam']
     });
 
     if (!freshTournament) {
@@ -340,21 +341,49 @@ export class MatchController {
 
     if (freshTournament.type === 'knockout' && freshTournament.status === 'active') {
       await TournamentController.generateKnockoutNextRound(freshTournament.id, match.round);
-      return;
-    }
-
-    if (freshTournament.realTournamentTemplate) {
+    } else if (freshTournament.realTournamentTemplate) {
       await TournamentController.resolveRealTournamentSlots(freshTournament.id);
-      return;
-    }
-
-    if (freshTournament.type === 'group_knockout' && freshTournament.status !== 'completed') {
+    } else if (freshTournament.type === 'group_knockout' && freshTournament.status !== 'completed') {
       if (match.groupName) {
         await TournamentController.generateGroupKnockoutStage(freshTournament.id);
       } else {
         await TournamentController.generateKnockoutNextRound(freshTournament.id, match.round);
       }
     }
+
+    await MatchController.completeTournamentIfAllPlayableMatchesFinished(freshTournament.id);
+  }
+
+  private static async completeTournamentIfAllPlayableMatchesFinished(tournamentId: string) {
+    const tournamentRepository = AppDataSource.getRepository(Tournament);
+    const tournament = await tournamentRepository.findOne({
+      where: { id: tournamentId },
+      relations: ['matches', 'matches.homeTeam', 'matches.awayTeam']
+    });
+
+    if (!tournament || tournament.status === 'completed') return;
+
+    const playableMatches = (tournament.matches || []).filter(match => match.homeTeam && match.awayTeam);
+    if (playableMatches.length === 0 || playableMatches.some(match => match.status !== 'completed')) return;
+
+    const finalMatch = playableMatches
+      .filter(match => match.stage !== 'third_place')
+      .sort((a, b) => b.round - a.round)[0];
+    const homeScore = finalMatch?.homeScore ?? 0;
+    const awayScore = finalMatch?.awayScore ?? 0;
+    const winner = finalMatch
+      ? homeScore > awayScore
+        ? finalMatch.homeTeam?.name
+        : awayScore > homeScore
+          ? finalMatch.awayTeam?.name
+          : (finalMatch.homePenaltyScore ?? 0) > (finalMatch.awayPenaltyScore ?? 0)
+            ? finalMatch.homeTeam?.name
+            : finalMatch.awayTeam?.name
+      : undefined;
+
+    tournament.status = 'completed';
+    tournament.winner = winner || tournament.winner;
+    await tournamentRepository.save(tournament);
   }
 
   static async getMatchStatistics(req: Request, res: Response) {
