@@ -8,6 +8,17 @@ import { MatchEngine } from '../services/matchEngine';
 import { TournamentController } from './tournamentController';
 
 export class MatchController {
+  private static isThirdPlaceMatch(match: Match) {
+    return match.stage === 'third_place'
+      || match.bracketStage === '三四名决赛'
+      || !!match.bracketSlot?.startsWith('TP');
+  }
+
+  private static isFinalMatch(match: Match) {
+    return match.bracketStage === '决赛'
+      || match.bracketSlot === 'F-1';
+  }
+
   private static shouldUsePenalties(match: Match, result: { homeScore: number; awayScore: number }) {
     return !match.groupName
       && match.tournament.type !== 'league'
@@ -363,12 +374,21 @@ export class MatchController {
 
     if (!tournament || tournament.status === 'completed') return;
 
-    const playableMatches = (tournament.matches || []).filter(match => match.homeTeam && match.awayTeam);
+    const allMatches = tournament.matches || [];
+    const explicitFinalMatch = allMatches.find(match => MatchController.isFinalMatch(match));
+    if (explicitFinalMatch && (!explicitFinalMatch.homeTeam || !explicitFinalMatch.awayTeam || explicitFinalMatch.status !== 'completed')) {
+      return;
+    }
+
+    const playableMatches = allMatches.filter(match => match.homeTeam && match.awayTeam);
     if (playableMatches.length === 0 || playableMatches.some(match => match.status !== 'completed')) return;
 
-    const finalMatch = playableMatches
-      .filter(match => match.stage !== 'third_place')
-      .sort((a, b) => b.round - a.round)[0];
+    const finalMatch = explicitFinalMatch
+      || playableMatches
+        .filter(match => !MatchController.isThirdPlaceMatch(match))
+        .sort((a, b) => b.round - a.round)[0];
+    if (!finalMatch || finalMatch.status !== 'completed') return;
+
     const homeScore = finalMatch?.homeScore ?? 0;
     const awayScore = finalMatch?.awayScore ?? 0;
     const winner = finalMatch

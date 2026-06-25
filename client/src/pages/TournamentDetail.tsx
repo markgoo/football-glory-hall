@@ -74,6 +74,8 @@ const createManualRoll = (match: Match, side: 'home' | 'away'): ManualRoll => {
 };
 const drawManualCandidates = (roll: ManualRoll) => Array.from({ length: 6 }, () => roll.pool[Math.floor(Math.random() * roll.pool.length)]).sort((a, b) => a - b);
 const hasPenaltyResult = (match: Match) => typeof match.homePenaltyScore === 'number' && typeof match.awayPenaltyScore === 'number';
+const isThirdPlaceMatch = (match: Match) => match.stage === 'third_place' || match.bracketStage === '三四名决赛' || !!match.bracketSlot?.startsWith('TP');
+const isFinalMatch = (match: Match) => match.bracketStage === '决赛' || match.bracketSlot === 'F-1';
 const createManualGame = (match: Match): ManualGame => {
   return {
     firstHalf: {
@@ -120,11 +122,11 @@ const getKnockoutStageLabel = (count: number) => {
 };
 const buildMatchStageLookup = (matches: Match[]) => {
   const counts = matches.reduce<Record<number, number>>((acc, match) => {
-    if (!match.groupName && match.stage !== 'third_place') acc[match.round] = (acc[match.round] || 0) + 1;
+    if (!match.groupName && !isThirdPlaceMatch(match)) acc[match.round] = (acc[match.round] || 0) + 1;
     return acc;
   }, {});
   return matches.reduce<Record<string, string>>((lookup, match) => {
-    lookup[match.id] = match.groupName || (match.stage === 'third_place' ? '三四名决赛' : getKnockoutStageLabel(counts[match.round] || 0));
+    lookup[match.id] = match.groupName || match.bracketStage || (isThirdPlaceMatch(match) ? '三四名决赛' : getKnockoutStageLabel(counts[match.round] || 0));
     return lookup;
   }, {});
 };
@@ -203,7 +205,7 @@ const splitGroupEntries = (groupedTeams: Record<string, Team[]>) => {
 
 const buildBracketColumns = (matches: Match[], lookup: Record<string, string>) => {
   const knockoutMatches = matches
-    .filter(match => !match.groupName && match.stage !== 'third_place')
+    .filter(match => !match.groupName && !isThirdPlaceMatch(match))
     .sort((a, b) => a.round - b.round || a.id.localeCompare(b.id));
   const byRound = knockoutMatches.reduce<Record<number, Match[]>>((rounds, match) => {
     rounds[match.round] = rounds[match.round] || [];
@@ -211,8 +213,9 @@ const buildBracketColumns = (matches: Match[], lookup: Record<string, string>) =
     return rounds;
   }, {});
   const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
-  const finalRound = rounds.find(round => byRound[round].length === 1) ?? rounds[rounds.length - 1];
-  const finalMatch = finalRound !== undefined ? byRound[finalRound]?.[0] : undefined;
+  const explicitFinalMatch = knockoutMatches.find(isFinalMatch);
+  const finalRound = explicitFinalMatch?.round ?? rounds.find(round => byRound[round].length === 1) ?? rounds[rounds.length - 1];
+  const finalMatch = explicitFinalMatch || (finalRound !== undefined ? byRound[finalRound]?.[0] : undefined);
   const sideRounds = rounds.filter(round => round !== finalRound);
   const left: BracketColumn[] = [];
   const right: BracketColumn[] = [];

@@ -74,9 +74,16 @@ export class TournamentController {
     return value === 'fifa_world_cup_2026' ? value : undefined;
   }
 
+  private static isThirdPlaceMatch(match: Match) {
+    return match.stage === 'third_place'
+      || match.bracketStage === '三四名决赛'
+      || !!match.bracketSlot?.startsWith('TP');
+  }
+
   private static getMatchStageOrder(match: Match) {
     if (match.groupName) return TournamentController.getGroupOrder(match.groupName);
-    if (match.stage === 'third_place') return 9998;
+    if (TournamentController.isThirdPlaceMatch(match)) return 9998;
+    if (match.bracketStage) return TournamentController.getGroupOrder(match.bracketStage);
     return 9999;
   }
 
@@ -738,6 +745,9 @@ export class TournamentController {
       match.status = 'scheduled';
       match.bracketStage = templateMatch.bracketStage;
       match.bracketSlot = templateMatch.bracketSlot;
+      if (templateMatch.bracketStage === '三四名决赛' || templateMatch.bracketSlot.startsWith('TP')) {
+        match.stage = 'third_place';
+      }
       match.homeSlot = templateMatch.homeSlot;
       match.awaySlot = templateMatch.awaySlot;
       match.scheduledAt = new Date(templateMatch.date);
@@ -899,7 +909,7 @@ export class TournamentController {
       return [];
     }
 
-    const advancingMatches = currentRoundMatches.filter(match => match.stage !== 'third_place');
+    const advancingMatches = currentRoundMatches.filter(match => !TournamentController.isThirdPlaceMatch(match));
     if (advancingMatches.length === 0) {
       return [];
     }
