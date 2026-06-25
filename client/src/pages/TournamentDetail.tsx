@@ -453,24 +453,21 @@ const TournamentDetail: React.FC = () => {
   const manualReadyToSave = manualGameComplete && (!manualNeedsPenalty || penaltyComplete);
   const rollPenaltyShotDie = () => Math.floor(Math.random() * 7);
   const rollPenaltySaveDie = () => Math.floor(Math.random() * 6) + 1;
-  const rollPenalty = (forcedDie?: number) => {
+  const createPenaltyKick = (side: ManualSideKey): PenaltyKick => {
+    const shooter = rollPenaltyShotDie();
+    const keeper = rollPenaltySaveDie();
+    return { side, shooter, keeper, goal: shooter > 0 && shooter >= keeper };
+  };
+  const autoCompletePenaltyShootout = () => {
     if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
-    setPenaltyKicks(current => {
-      const last = current[current.length - 1];
-      if (!last || (last.shooter !== undefined && last.keeper !== undefined)) {
-        const nextDie = typeof forcedDie === 'number' ? forcedDie : rollPenaltyShotDie();
-        return [...current, { side: current.length % 2 === 0 ? 'home' : 'away', shooter: nextDie }];
-      }
-      if (last.shooter === undefined) {
-        const nextDie = typeof forcedDie === 'number' ? forcedDie : rollPenaltyShotDie();
-        return current.map((kick, index) => index === current.length - 1 ? { ...kick, shooter: nextDie } : kick);
-      }
-      if (last.keeper === undefined) {
-        const keeper = typeof forcedDie === 'number' ? forcedDie : rollPenaltySaveDie();
-        return current.map((kick, index) => index === current.length - 1 ? { ...kick, keeper, goal: (kick.shooter ?? 0) > 0 && (kick.shooter ?? 0) >= keeper } : kick);
-      }
-      return current;
-    });
+    const kicks: PenaltyKick[] = [];
+    while (true) {
+      kicks.push(createPenaltyKick('home'));
+      kicks.push(createPenaltyKick('away'));
+      const rounds = kicks.length / 2;
+      if (rounds >= 5 && getPenaltyScore(kicks, 'home') !== getPenaltyScore(kicks, 'away')) break;
+    }
+    setPenaltyKicks(kicks);
   };
   const openPenaltyDice = () => {
     if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
@@ -633,7 +630,7 @@ const TournamentDetail: React.FC = () => {
           </section>
         )}
       </div>
-      {manualMatch && <ManualMatchModal match={manualMatch} game={manualGame} submitting={submittingManual} complete={manualReadyToSave} normalComplete={manualGameComplete} needsPenalty={manualNeedsPenalty} penaltyComplete={penaltyComplete} penaltyKicks={penaltyKicks} penaltyDiceOpen={penaltyDiceOpen} rollingCount={manualRollingCount} rollAllUsed={manualRollAllUsed} anyRollStarted={manualAnyRollStarted} autoSubmit={manualAutoSubmit} saved={manualSaved} onClose={() => { clearAllManualRollTimers(); setManualAutoSubmit(false); setManualRollAllUsed(false); setManualSaved(false); setPenaltyKicks([]); setPenaltyDiceOpen(false); setManualMatch(null); }} onRoll={rollManualSide} onRollAll={rollAllManualSides} onRequestLanding={requestManualLanding} onPenaltyRoll={rollPenalty} onPenaltyManualRoll={openPenaltyDice} onPenaltyDiceClose={() => setPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeManualPenaltyKick(shooter, keeper); setPenaltyDiceOpen(false); }} onSubmit={submitManualMatch} getScore={getManualScore} />}
+      {manualMatch && <ManualMatchModal match={manualMatch} game={manualGame} submitting={submittingManual} complete={manualReadyToSave} normalComplete={manualGameComplete} needsPenalty={manualNeedsPenalty} penaltyComplete={penaltyComplete} penaltyKicks={penaltyKicks} penaltyDiceOpen={penaltyDiceOpen} rollingCount={manualRollingCount} rollAllUsed={manualRollAllUsed} anyRollStarted={manualAnyRollStarted} autoSubmit={manualAutoSubmit} saved={manualSaved} onClose={() => { clearAllManualRollTimers(); setManualAutoSubmit(false); setManualRollAllUsed(false); setManualSaved(false); setPenaltyKicks([]); setPenaltyDiceOpen(false); setManualMatch(null); }} onRoll={rollManualSide} onRollAll={rollAllManualSides} onRequestLanding={requestManualLanding} onPenaltyRoll={autoCompletePenaltyShootout} onPenaltyManualRoll={openPenaltyDice} onPenaltyDiceClose={() => setPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeManualPenaltyKick(shooter, keeper); setPenaltyDiceOpen(false); }} onSubmit={submitManualMatch} getScore={getManualScore} />}
       <FloatingScrollToolbar onTop={scrollToPageTop} onBottom={scrollToPageBottom} onNextMatch={handleJumpToNextScheduledMatch} hasNextMatch={Boolean(nextScheduledMatch)} />
     </div>
   );
