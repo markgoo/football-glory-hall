@@ -54,7 +54,7 @@ npm run dev
 
 # Individual services
 npm run server:dev    # Backend on :5000
-npm run client:dev    # Frontend on :3000
+npm run client:dev    # Frontend on :9300
 
 # Build for production
 npm run build         # Builds both client and server
@@ -127,7 +127,7 @@ PORT=5000
 NODE_ENV=development
 JWT_SECRET=your-secret-key
 DB_PATH=./data/database.sqlite
-CLIENT_URL=http://localhost:3000
+CLIENT_URL=http://localhost:9300
 ```
 
 ### Frontend Environment Variables (client/.env)

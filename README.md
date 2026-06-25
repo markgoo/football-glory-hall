@@ -93,7 +93,7 @@ npm run dev
 ```
 
 应用将运行在：
-- 前端: http://localhost:3000
+- 前端: http://localhost:9300
 - 后端: http://localhost:5000
 
 ## 🏆 高级功能：真实足球数据API
@@ -126,7 +126,7 @@ cp .env.example .env
 ## 🎮 使用指南
 
 ### 1. 创建账户
-访问 http://localhost:3000 注册新账户或登录
+访问 http://localhost:9300 注册新账户或登录
 
 ### 2. 创建杯赛
 1. 登录后进入"杯赛管理"

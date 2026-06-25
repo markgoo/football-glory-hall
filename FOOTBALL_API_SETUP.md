@@ -31,7 +31,7 @@ PORT=5000
 NODE_ENV=development
 JWT_SECRET=your-super-secret-jwt-key
 DB_PATH=./data/database.sqlite
-CLIENT_URL=http://localhost:3000
+CLIENT_URL=http://localhost:9300
 
 # Football API 配置
 FOOTBALL_API_KEY=your-api-key-here  # 在这里填入你的API密钥

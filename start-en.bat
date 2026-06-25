@@ -69,7 +69,7 @@ echo.
 echo ============================================
 echo Starting application...
 echo ============================================
-echo Frontend: http://localhost:3000
+echo Frontend: http://localhost:9300
 echo Backend:  http://localhost:5005
 echo.
 echo Tip: Press Ctrl+C to stop all services
