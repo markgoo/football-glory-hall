@@ -42,6 +42,33 @@ const getTeamIdentityKey = (team: any) => {
   return teamName ? `${teamName}:${country}` : String(team?.id || '').toLowerCase();
 };
 
+const FIFA_WORLD_CUP_2026_BRACKET_SLOTS: Record<string, { homeSlot: string; awaySlot: string }> = {
+  'R32-1': { homeSlot: '2A', awaySlot: '2B' },
+  'R32-2': { homeSlot: '1E', awaySlot: '3A/B/C/D/F' },
+  'R32-3': { homeSlot: '1F', awaySlot: '2C' },
+  'R32-4': { homeSlot: '1C', awaySlot: '2F' },
+  'R32-5': { homeSlot: '1I', awaySlot: '3C/D/F/G/H' },
+  'R32-6': { homeSlot: '2E', awaySlot: '2I' },
+  'R32-7': { homeSlot: '1A', awaySlot: '3C/E/F/H/I' },
+  'R32-8': { homeSlot: '1L', awaySlot: '3E/H/I/J/K' },
+  'R32-9': { homeSlot: '1D', awaySlot: '3B/E/F/I/J' },
+  'R32-10': { homeSlot: '1G', awaySlot: '3A/E/H/I/J' },
+  'R32-11': { homeSlot: '2K', awaySlot: '2L' },
+  'R32-12': { homeSlot: '1H', awaySlot: '2J' },
+  'R32-13': { homeSlot: '1B', awaySlot: '3E/F/G/I/J' },
+  'R32-14': { homeSlot: '1J', awaySlot: '2H' },
+  'R32-15': { homeSlot: '1K', awaySlot: '3D/E/I/J/L' },
+  'R32-16': { homeSlot: '2D', awaySlot: '2G' },
+  'R16-1': { homeSlot: 'W R32-1', awaySlot: 'W R32-3' },
+  'R16-2': { homeSlot: 'W R32-2', awaySlot: 'W R32-5' },
+  'R16-3': { homeSlot: 'W R32-4', awaySlot: 'W R32-6' },
+  'R16-4': { homeSlot: 'W R32-7', awaySlot: 'W R32-8' },
+  'R16-5': { homeSlot: 'W R32-11', awaySlot: 'W R32-12' },
+  'R16-6': { homeSlot: 'W R32-9', awaySlot: 'W R32-10' },
+  'R16-7': { homeSlot: 'W R32-14', awaySlot: 'W R32-16' },
+  'R16-8': { homeSlot: 'W R32-13', awaySlot: 'W R32-15' }
+};
+
 export class TournamentController {
   private static normalizeRealTemplateId(value: unknown): RealTournamentTemplateId | undefined {
     return value === 'fifa_world_cup_2026' ? value : undefined;
@@ -178,7 +205,10 @@ export class TournamentController {
 
       if (tournament.type === 'group_knockout' && tournament.status !== 'completed') {
         const generatedMatches = await TournamentController.generateGroupKnockoutStage(tournament.id);
-        if (generatedMatches.length > 0) {
+        const resolvedMatches = tournament.realTournamentTemplate
+          ? await TournamentController.resolveRealTournamentSlots(tournament.id)
+          : [];
+        if (generatedMatches.length > 0 || resolvedMatches.length > 0) {
           tournament = await tournamentRepository.findOne({
             where: { id },
             relations: ['teams', 'matches', 'matches.homeTeam', 'matches.awayTeam', 'matches.statistics']
@@ -1061,19 +1091,35 @@ export class TournamentController {
     goalsFor: number;
     goalsAgainst: number;
     goalDifference: number;
-  }>>, bestThirdByGroup: Map<string, Team>) {
+  }>>, bestThirdByGroup: Map<string, Team>, completedGroupNames: Set<string>, usedTeamIds?: Set<string>) {
     const direct = slot.match(/^([123])([A-L])$/);
     if (direct) {
       const [, position, groupLetter] = direct;
-      return standingsByGroup[`${groupLetter}组`]?.[Number(position) - 1]?.team;
+      const groupName = `${groupLetter}组`;
+      if (!completedGroupNames.has(groupName)) return undefined;
+      return standingsByGroup[groupName]?.[Number(position) - 1]?.team;
+    }
+
+    const rankedCandidate = slot.match(/^([12])([A-L](?:\/[A-L])*)$/);
+    if (rankedCandidate) {
+      const [, position, groupList] = rankedCandidate;
+      const groups = groupList.split('/');
+      for (const groupLetter of groups) {
+        const groupName = `${groupLetter}组`;
+        if (!completedGroupNames.has(groupName)) continue;
+        const team = standingsByGroup[groupName]?.[Number(position) - 1]?.team;
+        if (team && !usedTeamIds?.has(team.id)) return team;
+      }
     }
 
     const thirdCandidate = slot.match(/^3([A-L](?:\/[A-L])*)$/);
     if (thirdCandidate) {
       const groups = thirdCandidate[1].split('/');
       for (const groupLetter of groups) {
-        const team = bestThirdByGroup.get(`${groupLetter}组`);
-        if (team) return team;
+        const groupName = `${groupLetter}组`;
+        if (!completedGroupNames.has(groupName)) continue;
+        const team = bestThirdByGroup.get(groupName);
+        if (team && !usedTeamIds?.has(team.id)) return team;
       }
     }
 
@@ -1100,15 +1146,24 @@ export class TournamentController {
     if (slotMatches.length === 0) return [];
 
     const groupMatches = matches.filter(match => match.groupName);
+    const completedGroupNames = new Set(Object.entries(groupMatches.reduce<Record<string, { total: number; completed: number }>>((groups, match) => {
+      const groupName = match.groupName as string;
+      groups[groupName] = groups[groupName] || { total: 0, completed: 0 };
+      groups[groupName].total += 1;
+      if (match.status === 'completed') groups[groupName].completed += 1;
+      return groups;
+    }, {})).filter(([, count]) => count.total > 0 && count.completed === count.total).map(([groupName]) => groupName));
     const standings = standingsByGroup || TournamentController.calculateGroupStandings(tournament.teams || [], groupMatches);
     const sortedGroupNames = groupNames || Object.keys(standings).sort((a, b) => TournamentController.compareGroupNames(a, b));
+    const allGroupsComplete = sortedGroupNames.length > 0 && sortedGroupNames.every(groupName => completedGroupNames.has(groupName));
     const bestThirdRows = sortedGroupNames
       .map(groupName => ({ groupName, row: standings[groupName]?.[2] }))
       .filter((item): item is { groupName: string; row: NonNullable<typeof item.row> } => !!item.row)
       .sort((a, b) => b.row.points - a.row.points || b.row.goalDifference - a.row.goalDifference || b.row.goalsFor - a.row.goalsFor || b.row.wins - a.row.wins || a.row.team.name.localeCompare(b.row.team.name))
       .slice(0, 8);
-    const bestThirdByGroup = new Map(bestThirdRows.map(item => [item.groupName, item.row.team]));
+    const bestThirdByGroup = allGroupsComplete ? new Map(bestThirdRows.map(item => [item.groupName, item.row.team])) : new Map<string, Team>();
     const matchBySlot = new Map(slotMatches.map(match => [match.bracketSlot as string, match]));
+    const usedTeamIds = new Set<string>();
 
     const resolveSlot = (slot?: string): Team | undefined => {
       if (!slot) return undefined;
@@ -1116,20 +1171,38 @@ export class TournamentController {
       if (winnerSlot) return TournamentController.getMatchWinnerTeam(matchBySlot.get(winnerSlot[1]) as Match);
       const loserSlot = slot.match(/^L\s+(.+)$/);
       if (loserSlot) return TournamentController.getMatchLoserTeam(matchBySlot.get(loserSlot[1]) as Match);
-      return TournamentController.resolveGroupSlot(slot, standings, bestThirdByGroup);
+      return TournamentController.resolveGroupSlot(slot, standings, bestThirdByGroup, completedGroupNames, usedTeamIds);
     };
 
     const updated: Match[] = [];
     for (const match of slotMatches.sort((a, b) => a.round - b.round)) {
-      const homeTeam = resolveSlot(match.homeSlot);
-      const awayTeam = resolveSlot(match.awaySlot);
       let changed = false;
+      if (tournament.realTournamentTemplate === 'fifa_world_cup_2026' && match.status === 'scheduled' && match.bracketSlot) {
+        const expected = FIFA_WORLD_CUP_2026_BRACKET_SLOTS[match.bracketSlot];
+        if (expected && (match.homeSlot !== expected.homeSlot || match.awaySlot !== expected.awaySlot)) {
+          match.homeSlot = expected.homeSlot;
+          match.awaySlot = expected.awaySlot;
+          match.homeTeam = null as any;
+          match.awayTeam = null as any;
+          changed = true;
+        }
+      }
+      const homeTeam = resolveSlot(match.homeSlot);
+      if (homeTeam) usedTeamIds.add(homeTeam.id);
+      const awayTeam = resolveSlot(match.awaySlot);
+      if (awayTeam) usedTeamIds.add(awayTeam.id);
       if (homeTeam && match.homeTeam?.id !== homeTeam.id) {
         match.homeTeam = homeTeam;
+        changed = true;
+      } else if (!homeTeam && match.status === 'scheduled' && match.homeSlot && match.homeTeam) {
+        match.homeTeam = null as any;
         changed = true;
       }
       if (awayTeam && match.awayTeam?.id !== awayTeam.id) {
         match.awayTeam = awayTeam;
+        changed = true;
+      } else if (!awayTeam && match.status === 'scheduled' && match.awaySlot && match.awayTeam) {
+        match.awayTeam = null as any;
         changed = true;
       }
       if (changed) updated.push(match);
