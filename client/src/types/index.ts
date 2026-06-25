@@ -53,6 +53,7 @@ export interface Tournament {
   teamCount: number;
   groupSize?: number;
   teamCountries?: string[];
+  startTime?: string;
   currentRound: number;
   winner?: string;
   teams: Team[];
@@ -64,6 +65,7 @@ export interface Match {
   round: number;
   groupName?: string;
   stage?: 'third_place';
+  scheduledAt?: string;
   status: 'scheduled' | 'in_progress' | 'completed';
   homeTeam: Team;
   awayTeam: Team;

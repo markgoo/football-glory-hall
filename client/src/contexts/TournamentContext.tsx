@@ -8,7 +8,7 @@ interface TournamentContextType {
   loading: boolean;
   error: string | null;
   fetchTournaments: () => Promise<void>;
-  createTournament: (data: { name: string; description: string; type: string; teamCount: number; groupSize?: number; teamCountries?: string[]; selectedTeams?: TeamCandidate[] }) => Promise<void>;
+  createTournament: (data: { name: string; description: string; type: string; teamCount: number; groupSize?: number; teamCountries?: string[]; startTime?: string; selectedTeams?: TeamCandidate[] }) => Promise<void>;
   updateTournament: (id: string, data: Partial<Tournament>) => Promise<void>;
   deleteTournament: (id: string) => Promise<void>;
   startTournament: (id: string) => Promise<void>;
@@ -49,7 +49,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  const createTournament = async (data: { name: string; description: string; type: string; teamCount: number; groupSize?: number; teamCountries?: string[]; selectedTeams?: TeamCandidate[] }) => {
+  const createTournament = async (data: { name: string; description: string; type: string; teamCount: number; groupSize?: number; teamCountries?: string[]; startTime?: string; selectedTeams?: TeamCandidate[] }) => {
     try {
       await tournamentAPI.create(data);
       await fetchTournaments();

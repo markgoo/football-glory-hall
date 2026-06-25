@@ -41,6 +41,56 @@ const getTeamIdentityKey = (team: any) => {
 };
 
 export class TournamentController {
+  private static getMatchStageOrder(match: Match) {
+    if (match.groupName) return TournamentController.getGroupOrder(match.groupName);
+    if (match.stage === 'third_place') return 9998;
+    return 9999;
+  }
+
+  private static assignMatchSchedule(matches: Match[], startTime?: Date) {
+    if (!startTime || Number.isNaN(startTime.getTime())) return;
+
+    const roundIndexes = Array.from(new Set(matches.map(match => match.round))).sort((a, b) => a - b);
+    const roundOffset = new Map(roundIndexes.map((round, index) => [round, index]));
+
+    roundIndexes.forEach(round => {
+      const roundMatches = matches
+        .filter(match => match.round === round)
+        .sort((a, b) =>
+          TournamentController.getMatchStageOrder(a) - TournamentController.getMatchStageOrder(b) ||
+          (a.homeTeam?.name || '').localeCompare(b.homeTeam?.name || '') ||
+          (a.awayTeam?.name || '').localeCompare(b.awayTeam?.name || '')
+        );
+      roundMatches.forEach((match, index) => {
+        const scheduledAt = new Date(startTime);
+        scheduledAt.setDate(scheduledAt.getDate() + (roundOffset.get(round) || 0));
+        scheduledAt.setHours(scheduledAt.getHours() + index * 2);
+        match.scheduledAt = scheduledAt;
+      });
+    });
+  }
+
+  private static getNextRoundStartTime(existingMatches: Match[], nextRound: number, tournamentStartTime?: Date) {
+    const scheduledTimes = existingMatches
+      .map(match => match.scheduledAt ? new Date(match.scheduledAt).getTime() : undefined)
+      .filter((time): time is number => typeof time === 'number' && !Number.isNaN(time));
+
+    if (scheduledTimes.length > 0) {
+      const nextStart = new Date(Math.max(...scheduledTimes));
+      nextStart.setDate(nextStart.getDate() + 1);
+      nextStart.setMinutes(0, 0, 0);
+      return nextStart;
+    }
+
+    if (tournamentStartTime) {
+      const nextStart = new Date(tournamentStartTime);
+      nextStart.setDate(nextStart.getDate() + Math.max(0, nextRound - 1));
+      return nextStart;
+    }
+
+    return undefined;
+  }
+
   static async getTeamPool(req: Request, res: Response) {
     try {
       const { teamCount, teamCountries } = req.body;
@@ -141,6 +191,7 @@ export class TournamentController {
         teamCount: tournament.teamCount,
         groupSize: tournament.groupSize,
         teamCountries: tournament.teamCountries,
+        startTime: tournament.startTime,
         currentRound: tournament.currentRound,
         winner: tournament.winner,
         createdAt: tournament.createdAt,
@@ -167,6 +218,7 @@ export class TournamentController {
             round: match.round,
             groupName: match.groupName,
             stage: match.stage,
+            scheduledAt: match.scheduledAt,
             status: match.status,
             homeScore: match.homeScore,
             awayScore: match.awayScore,
@@ -207,16 +259,21 @@ export class TournamentController {
 
   static async createTournament(req: Request, res: Response) {
     try {
-      const { name, description, type, teamCount, groupSize, teamCountries, selectedTeams } = req.body;
+      const { name, description, type, teamCount, groupSize, teamCountries, selectedTeams, startTime } = req.body;
       const userId = (req as any).user.id;
       const normalizedTeamCount = Number(teamCount);
       const normalizedGroupSize = type === 'group_knockout' ? Number(groupSize) : undefined;
+      const normalizedStartTime = startTime ? new Date(startTime) : undefined;
       const normalizedTeamCountries = Array.isArray(teamCountries)
         ? teamCountries.map((country: unknown) => String(country).trim()).filter(Boolean)
         : undefined;
 
-      if (!name || !description || !type || !teamCount) {
+      if (!name || !description || !type || !teamCount || !startTime) {
         return res.status(400).json({ error: 'All fields are required' });
+      }
+
+      if (!normalizedStartTime || Number.isNaN(normalizedStartTime.getTime())) {
+        return res.status(400).json({ error: 'Invalid tournament start time' });
       }
 
       if (!['league', 'knockout', 'group_knockout'].includes(type)) {
@@ -255,6 +312,7 @@ export class TournamentController {
         teamCount: normalizedTeamCount,
         groupSize: normalizedGroupSize,
         teamCountries: normalizedTeamCountries && normalizedTeamCountries.length > 0 ? normalizedTeamCountries : undefined,
+        startTime: normalizedStartTime,
         user: { id: userId }
       });
 
@@ -367,6 +425,7 @@ export class TournamentController {
         teamCount: savedTournament.teamCount,
         groupSize: savedTournament.groupSize,
         teamCountries: savedTournament.teamCountries,
+        startTime: savedTournament.startTime,
         currentRound: savedTournament.currentRound,
         winner: savedTournament.winner,
         createdAt: savedTournament.createdAt,
@@ -385,6 +444,7 @@ export class TournamentController {
           round: match.round,
           groupName: match.groupName,
           stage: match.stage,
+          scheduledAt: match.scheduledAt,
           status: match.status,
           homePenaltyScore: match.homePenaltyScore,
           awayPenaltyScore: match.awayPenaltyScore,
@@ -550,6 +610,7 @@ export class TournamentController {
         break;
     }
 
+    TournamentController.assignMatchSchedule(matches, tournament.startTime);
     return matchRepository.save(matches);
   }
 
@@ -718,6 +779,11 @@ export class TournamentController {
         nextRoundMatches.push(TournamentController.createMatch(tournament, losers[0], losers[1], nextRound, undefined, 'third_place'));
       }
 
+      TournamentController.assignMatchSchedule(
+        nextRoundMatches,
+        TournamentController.getNextRoundStartTime(tournament.matches || [], nextRound, tournament.startTime)
+      );
+
       console.log(`[GENERATE] Prepared ${nextRoundMatches.length} matches, saving to database...`);
       // Save the new matches
       const savedMatches = await matchRepository.save(nextRoundMatches);
@@ -791,6 +857,11 @@ export class TournamentController {
       const awayTeam = groupRunnersUp[(index + 1) % groupRunnersUp.length];
       knockoutMatches.push(TournamentController.createMatch(tournament, homeTeam, awayTeam, knockoutRound));
     }
+
+    TournamentController.assignMatchSchedule(
+      knockoutMatches,
+      TournamentController.getNextRoundStartTime(groupMatches, knockoutRound, tournament.startTime)
+    );
 
     const savedMatches = await matchRepository.save(knockoutMatches);
     if (tournament.status === 'draft') {

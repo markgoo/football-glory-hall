@@ -24,6 +24,9 @@ export class Match {
   @Column({ type: 'text', nullable: true })
   stage?: MatchStage;
 
+  @Column({ type: 'datetime', nullable: true })
+  scheduledAt?: Date;
+
   @ManyToOne(() => Team)
   homeTeam!: Team;
 

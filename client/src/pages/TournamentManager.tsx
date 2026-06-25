@@ -13,6 +13,14 @@ type TournamentForm = {
   teamCount: number;
   groupSize: number;
   teamCountries: string[];
+  startTime: string;
+};
+
+const getDefaultStartTime = () => {
+  const date = new Date();
+  date.setHours(date.getHours() + 1, 0, 0, 0);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
 const defaultForm: TournamentForm = {
@@ -21,7 +29,8 @@ const defaultForm: TournamentForm = {
   type: 'knockout',
   teamCount: 16,
   groupSize: 4,
-  teamCountries: []
+  teamCountries: [],
+  startTime: getDefaultStartTime()
 };
 
 const countryOptions = [
@@ -197,6 +206,7 @@ const TournamentManager: React.FC = () => {
         teamCount: formData.teamCount,
         groupSize: formData.type === 'group_knockout' ? formData.groupSize : undefined,
         teamCountries: formData.teamCountries.length > 0 ? formData.teamCountries : undefined,
+        startTime: new Date(formData.startTime).toISOString(),
         selectedTeams
       });
 
@@ -245,7 +255,7 @@ const TournamentManager: React.FC = () => {
 
   const closeCreateDialog = () => {
     setShowCreateForm(false);
-    setFormData(defaultForm);
+    setFormData({ ...defaultForm, startTime: getDefaultStartTime() });
     setCreateStep(1);
     setTeamPool([]);
     setSelectedTeamIds([]);
@@ -333,6 +343,18 @@ const TournamentManager: React.FC = () => {
                       rows={3}
                       required
                     />
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">开始时间</label>
+                    <input
+                      type="datetime-local"
+                      value={formData.startTime}
+                      onChange={(event) => setFormData({ ...formData, startTime: event.target.value })}
+                      className="input w-full"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">每轮比赛会从这个时间开始自动排期，同一轮比赛每场间隔 2 小时。</p>
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-4 mt-4">

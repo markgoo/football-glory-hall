@@ -32,6 +32,9 @@ export class Tournament {
   @Column({ type: 'simple-json', nullable: true })
   teamCountries?: string[];
 
+  @Column({ type: 'datetime', nullable: true })
+  startTime?: Date;
+
   @Column({ type: 'integer', default: 0 })
   currentRound: number = 0;
 

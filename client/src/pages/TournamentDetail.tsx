@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Play, Search, Star, Trophy, Users } from 'lucide-react';
+import { ArrowLeft, Calendar, ChevronDown, Play, Search, Star, Trophy, Users } from 'lucide-react';
 import { matchAPI, tournamentAPI } from '../services/api';
 import { Match, Team, Tournament } from '../types';
 import { TeamFlag, TeamLogo, TeamNameWithFlag } from '../utils/flags';
@@ -128,11 +128,21 @@ const groupMatchesByStage = (matches: Match[], lookup: Record<string, string>) =
     return groups;
   }, {});
 };
+const groupMatchesByRoundAndStage = (matches: Match[], lookup: Record<string, string>) => {
+  return matches.reduce<Record<number, Record<string, Match[]>>>((rounds, match) => {
+    rounds[match.round] = rounds[match.round] || {};
+    const stageName = getMatchStageName(match, lookup);
+    rounds[match.round][stageName] = rounds[match.round][stageName] || [];
+    rounds[match.round][stageName].push(match);
+    return rounds;
+  }, {});
+};
 const compareMatches = (a: Match, b: Match, mode: MatchSortMode, lookup: Record<string, string>) => {
   if (mode === 'round-desc') return b.round - a.round || compareMatchStageNames(getMatchStageName(a, lookup), getMatchStageName(b, lookup));
   if (mode === 'team-asc') return (a.homeTeam?.name || '').localeCompare(b.homeTeam?.name || '') || (a.awayTeam?.name || '').localeCompare(b.awayTeam?.name || '');
-  return compareMatchStageNames(getMatchStageName(a, lookup), getMatchStageName(b, lookup)) || a.round - b.round;
+  return a.round - b.round || compareMatchStageNames(getMatchStageName(a, lookup), getMatchStageName(b, lookup));
 };
+const formatMatchTime = (value?: string) => value ? new Date(value).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '时间待定';
 
 const calculateGroupStandings = (teams: Team[], matches: Match[]) => {
   const standings = teams.reduce<Record<string, GroupStanding[]>>((groups, team) => {
@@ -249,6 +259,9 @@ const TournamentDetail: React.FC = () => {
   const [sortMode, setSortMode] = useState<MatchSortMode>('round-asc');
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [favoriteTeamIds, setFavoriteTeamIds] = useState<string[]>([]);
+  const [bracketOpen, setBracketOpen] = useState(false);
+  const [teamsOpen, setTeamsOpen] = useState(false);
+  const [standingsOpen, setStandingsOpen] = useState(false);
   const favoriteStorageKey = id ? `football-glory-hall:favorites:${id}` : '';
   const clearManualRollTimer = (half: ManualHalfKey, side: 'home' | 'away') => {
     const key = `${half}:${side}`;
@@ -305,7 +318,7 @@ const TournamentDetail: React.FC = () => {
       .filter(match => !onlyFavorites || favoriteTeamIds.some(teamId => matchContainsTeam(match, teamId)))
       .sort((a, b) => compareMatches(a, b, sortMode, stageLookup));
   }, [favoriteTeamIds, groupFilter, matches, onlyFavorites, query, roundFilter, sortMode, stageLookup, statusFilter]);
-  const filteredGroupedMatches = useMemo(() => groupMatchesByStage(filteredMatches, stageLookup), [filteredMatches, stageLookup]);
+  const filteredMatchesByRound = useMemo(() => groupMatchesByRoundAndStage(filteredMatches, stageLookup), [filteredMatches, stageLookup]);
 
   const toggleFavoriteTeam = (teamId: string) => {
     const next = favoriteTeamIds.includes(teamId) ? favoriteTeamIds.filter(id => id !== teamId) : [...favoriteTeamIds, teamId];
@@ -465,17 +478,24 @@ const TournamentDetail: React.FC = () => {
         </div>
         <div className="grid md:grid-cols-3 gap-4 mb-6">
           <InfoCard icon={<Users className="w-5 h-5 text-blue-600" />} label="球队数量" value={String(tournament.teamCount)} />
-          <InfoCard icon={<Calendar className="w-5 h-5 text-green-600" />} label="创建时间" value={new Date(tournament.createdAt).toLocaleDateString()} />
+          <InfoCard icon={<Calendar className="w-5 h-5 text-green-600" />} label="开始时间" value={tournament.startTime ? new Date(tournament.startTime).toLocaleString() : new Date(tournament.createdAt).toLocaleDateString()} />
           <InfoCard icon={<Trophy className="w-5 h-5 text-purple-600" />} label="杯赛类型" value={tournament.type === 'knockout' ? '淘汰赛' : tournament.type === 'league' ? '联赛' : '小组赛 + 淘汰赛'} detail={isGroupTournament && tournament.groupSize ? `${tournament.teamCount / tournament.groupSize} 组，每组 ${tournament.groupSize} 队` : undefined} />
         </div>
-        {teams.length > 0 && <TournamentBracket groupedTeams={groupedTeams} standings={groupStandings} completedGroupNames={completedGroupNames} columns={bracketColumns} champion={championInfo} />}
         {teams.length > 0 && (
-          <section>
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">参赛球队</h3>
-            {isGroupTournament ? <div className="grid lg:grid-cols-2 gap-4">{Object.entries(groupedTeams).sort(([a], [b]) => compareGroupNames(a, b)).map(([name, groupTeams]) => <TeamGroup key={name} groupName={name} teams={groupTeams} favoriteTeamIds={favoriteTeamIds} onToggleFavorite={toggleFavoriteTeam} />)}</div> : <div className="grid md:grid-cols-2 gap-4">{teams.map(team => <TeamCard key={team.id} team={team} isFavorite={favoriteTeamIds.includes(team.id)} onToggleFavorite={toggleFavoriteTeam} />)}</div>}
-          </section>
+          <CollapsibleSection title="杯赛晋级图" open={bracketOpen} onToggle={() => setBracketOpen(open => !open)}>
+            <TournamentBracket groupedTeams={groupedTeams} standings={groupStandings} completedGroupNames={completedGroupNames} columns={bracketColumns} champion={championInfo} />
+          </CollapsibleSection>
         )}
-        {isGroupTournament && Object.keys(groupStandings).length > 0 && <Standings standings={groupStandings} completedGroupNames={completedGroupNames} />}
+        {teams.length > 0 && (
+          <CollapsibleSection title="参赛球队" open={teamsOpen} onToggle={() => setTeamsOpen(open => !open)}>
+            {isGroupTournament ? <div className="grid lg:grid-cols-2 gap-4">{Object.entries(groupedTeams).sort(([a], [b]) => compareGroupNames(a, b)).map(([name, groupTeams]) => <TeamGroup key={name} groupName={name} teams={groupTeams} favoriteTeamIds={favoriteTeamIds} onToggleFavorite={toggleFavoriteTeam} />)}</div> : <div className="grid md:grid-cols-2 gap-4">{teams.map(team => <TeamCard key={team.id} team={team} isFavorite={favoriteTeamIds.includes(team.id)} onToggleFavorite={toggleFavoriteTeam} />)}</div>}
+          </CollapsibleSection>
+        )}
+        {isGroupTournament && Object.keys(groupStandings).length > 0 && (
+          <CollapsibleSection title="小组积分榜" open={standingsOpen} onToggle={() => setStandingsOpen(open => !open)}>
+            <Standings standings={groupStandings} completedGroupNames={completedGroupNames} />
+          </CollapsibleSection>
+        )}
         {matches.length > 0 && (
           <section id="match-results" className="mt-8 scroll-mt-4">
             <div className="flex justify-between items-center mb-4">
@@ -483,7 +503,23 @@ const TournamentDetail: React.FC = () => {
               {filteredMatches.some(match => match.status === 'scheduled') && <button onClick={handleStartAllMatches} disabled={startingAll} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{startingAll ? '正在开始...' : '开始当前筛选比赛'}</button>}
             </div>
             <MatchToolbar query={query} onQueryChange={setQuery} groupFilter={groupFilter} onGroupFilterChange={setGroupFilter} groupOptions={groupOptions} roundFilter={roundFilter} onRoundFilterChange={setRoundFilter} roundOptions={roundOptions} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} sortMode={sortMode} onSortModeChange={setSortMode} onlyFavorites={onlyFavorites} onOnlyFavoritesChange={setOnlyFavorites} hasFavorites={favoriteTeamIds.length > 0} />
-            {isGroupTournament ? <div className="space-y-6">{Object.entries(filteredGroupedMatches).sort(([a], [b]) => compareMatchStageNames(a, b)).map(([name, groupMatches]) => <div key={name}><h4 className="font-semibold text-gray-900 mb-3">{name}</h4><div className="space-y-3">{groupMatches.map(match => <MatchRow key={match.id} match={match} favoriteTeamIds={favoriteTeamIds} startingMatch={startingMatch} onStart={handleStartMatch} onManualStart={openManualMatch} />)}</div></div>)}</div> : <div className="space-y-4">{filteredMatches.map(match => <MatchRow key={match.id} match={match} favoriteTeamIds={favoriteTeamIds} startingMatch={startingMatch} onStart={handleStartMatch} onManualStart={openManualMatch} />)}</div>}
+            <div className="space-y-6">
+              {Object.entries(filteredMatchesByRound).sort(([a], [b]) => sortMode === 'round-desc' ? Number(b) - Number(a) : Number(a) - Number(b)).map(([round, stageGroups]) => (
+                <div key={round} className="border rounded-lg p-4 bg-gray-50">
+                  <h4 className="font-semibold text-gray-900 mb-3">第 {round} 轮</h4>
+                  <div className="space-y-4">
+                    {Object.entries(stageGroups).sort(([a], [b]) => compareMatchStageNames(a, b)).map(([name, groupMatches]) => (
+                      <div key={`${round}-${name}`}>
+                        <div className="text-sm font-medium text-gray-700 mb-2">{name}</div>
+                        <div className="space-y-3">
+                          {groupMatches.map(match => <MatchRow key={match.id} match={match} favoriteTeamIds={favoriteTeamIds} startingMatch={startingMatch} onStart={handleStartMatch} onManualStart={openManualMatch} />)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
             {filteredMatches.length === 0 && <div className="border rounded-lg p-8 text-center text-gray-500">没有符合当前筛选条件的比赛。</div>}
           </section>
         )}
@@ -494,6 +530,16 @@ const TournamentDetail: React.FC = () => {
 };
 
 const InfoCard: React.FC<{ icon: React.ReactNode; label: string; value: string; detail?: string }> = ({ icon, label, value, detail }) => <div className="bg-gray-50 p-4 rounded-lg"><div className="flex items-center gap-2">{icon}<span className="text-sm text-gray-600">{label}</span></div><p className="text-lg font-semibold text-gray-900 mt-1">{value}</p>{detail && <p className="text-sm text-gray-600 mt-1">{detail}</p>}</div>;
+
+const CollapsibleSection: React.FC<{ title: string; open: boolean; onToggle: () => void; children: React.ReactNode }> = ({ title, open, onToggle, children }) => (
+  <section className="mb-4 border rounded-lg">
+    <button type="button" onClick={onToggle} className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50">
+      <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
+      <ChevronDown className={`w-5 h-5 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    {open && <div className="px-4 pb-4">{children}</div>}
+  </section>
+);
 
 const TournamentBracket: React.FC<{ groupedTeams: Record<string, Team[]>; standings: Record<string, GroupStanding[]>; completedGroupNames: Set<string>; columns: { left: BracketColumn[]; right: BracketColumn[]; finalMatch?: Match }; champion?: ChampionInfo }> = ({ groupedTeams, standings, completedGroupNames, columns, champion }) => {
   const { left, right } = splitGroupEntries(groupedTeams);
@@ -631,13 +677,13 @@ const Standings: React.FC<{ standings: Record<string, GroupStanding[]>; complete
 );
 
 const MatchToolbar: React.FC<{ query: string; onQueryChange: (value: string) => void; groupFilter: string; onGroupFilterChange: (value: string) => void; groupOptions: string[]; roundFilter: string; onRoundFilterChange: (value: string) => void; roundOptions: number[]; statusFilter: MatchStatusFilter; onStatusFilterChange: (value: MatchStatusFilter) => void; sortMode: MatchSortMode; onSortModeChange: (value: MatchSortMode) => void; onlyFavorites: boolean; onOnlyFavoritesChange: (value: boolean) => void; hasFavorites: boolean }> = ({ query, onQueryChange, groupFilter, onGroupFilterChange, groupOptions, roundFilter, onRoundFilterChange, roundOptions, statusFilter, onStatusFilterChange, sortMode, onSortModeChange, onlyFavorites, onOnlyFavoritesChange, hasFavorites }) => (
-  <div className="bg-gray-50 border rounded-lg p-4 mb-4"><div className="grid md:grid-cols-6 gap-3"><div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input value={query} onChange={(event) => onQueryChange(event.target.value)} className="input pl-9" placeholder="搜索球队" /></div><select value={groupFilter} onChange={(event) => onGroupFilterChange(event.target.value)} className="input"><option value="all">全部阶段</option>{groupOptions.map(name => <option key={name} value={name}>{name}</option>)}</select><select value={roundFilter} onChange={(event) => onRoundFilterChange(event.target.value)} className="input"><option value="all">全部轮次</option>{roundOptions.map(round => <option key={round} value={round}>第 {round} 轮</option>)}</select><select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value as MatchStatusFilter)} className="input"><option value="all">全部状态</option><option value="scheduled">待进行</option><option value="completed">已结束</option></select><select value={sortMode} onChange={(event) => onSortModeChange(event.target.value as MatchSortMode)} className="input"><option value="round-asc">阶段优先</option><option value="round-desc">轮次降序</option><option value="team-asc">主队名称</option></select></div><label className={`mt-3 inline-flex items-center gap-2 text-sm ${hasFavorites ? 'text-gray-700' : 'text-gray-400'}`}><input type="checkbox" checked={onlyFavorites} disabled={!hasFavorites} onChange={(event) => onOnlyFavoritesChange(event.target.checked)} />只看关注球队的比赛</label></div>
+  <div className="bg-gray-50 border rounded-lg p-4 mb-4"><div className="grid md:grid-cols-6 gap-3"><div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input value={query} onChange={(event) => onQueryChange(event.target.value)} className="input pl-9" placeholder="搜索球队" /></div><select value={groupFilter} onChange={(event) => onGroupFilterChange(event.target.value)} className="input"><option value="all">全部阶段</option>{groupOptions.map(name => <option key={name} value={name}>{name}</option>)}</select><select value={roundFilter} onChange={(event) => onRoundFilterChange(event.target.value)} className="input"><option value="all">全部轮次</option>{roundOptions.map(round => <option key={round} value={round}>第 {round} 轮</option>)}</select><select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value as MatchStatusFilter)} className="input"><option value="all">全部状态</option><option value="scheduled">待进行</option><option value="completed">已结束</option></select><select value={sortMode} onChange={(event) => onSortModeChange(event.target.value as MatchSortMode)} className="input"><option value="round-asc">轮次优先</option><option value="round-desc">轮次降序</option><option value="team-asc">主队名称</option></select></div><label className={`mt-3 inline-flex items-center gap-2 text-sm ${hasFavorites ? 'text-gray-700' : 'text-gray-400'}`}><input type="checkbox" checked={onlyFavorites} disabled={!hasFavorites} onChange={(event) => onOnlyFavoritesChange(event.target.checked)} />只看关注球队的比赛</label></div>
 );
 
 const MatchRow: React.FC<{ match: Match; favoriteTeamIds: string[]; startingMatch: string | null; onStart: (matchId: string) => void; onManualStart: (match: Match) => void }> = ({ match, favoriteTeamIds, startingMatch, onStart, onManualStart }) => {
   const homeFavorite = match.homeTeam && favoriteTeamIds.includes(match.homeTeam.id);
   const awayFavorite = match.awayTeam && favoriteTeamIds.includes(match.awayTeam.id);
-  return <div className="border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">第 {match.round} 轮 - {match.status === 'scheduled' ? '待进行' : match.status === 'in_progress' ? '进行中' : '已结束'}{match.resultMode === 'manual' && <span className="ml-2 text-blue-700">手工计算</span>}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">点球 {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? '开始中...' : '自动进行'}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">手动进行</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? '查看详情' : '查看统计'}</Link></div></div></div>;
+  return <div className="border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">第 {match.round} 轮 - {match.status === 'scheduled' ? '待进行' : match.status === 'in_progress' ? '进行中' : '已结束'}{match.resultMode === 'manual' && <span className="ml-2 text-blue-700">上帝摇骰子</span>}</p><p className="text-xs text-gray-500 mt-1">{formatMatchTime(match.scheduledAt)}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">点球 {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? '开始中...' : '自动进行'}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">手动进行</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? '查看详情' : '查看统计'}</Link></div></div></div>;
 };
 
 const ManualMatchModal: React.FC<{
