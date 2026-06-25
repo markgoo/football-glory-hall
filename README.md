@@ -1,286 +1,168 @@
-# Football Glory Hall - 足球荣耀殿堂
+# Football Glory Hall
 
-一个现代化的网页足球经理游戏，让你创建杯赛、管理球队、模拟比赛，并将所有历史记录保存在荣耀殿堂中。
+一个足球杯赛模拟与荣耀记录系统。支持创建俱乐部杯赛、国家队杯赛、真实赛事模板、自动模拟比赛、掷骰子手动比赛、晋级图和历史记录。
 
-## 🏆 功能特色
+## 功能概览
 
-- **用户系统**: 完整的注册/登录功能，支持JWT认证
-- **杯赛管理**: 创建、管理、删除各类杯赛（淘汰赛、联赛、小组赛）
-- **真实球队数据**: 集成Football API，获取真实球队和球员信息
-- **球队系统**: 自动生成球队，包含详细属性（攻击、防守、中场、整体实力）
-- **比赛引擎**: AI驱动的比赛模拟系统，生成详细比赛数据和文字解说
-- **数据统计**: 全面的比赛统计（控球率、射门、角球、犯规等）
-- **荣耀殿堂**: 永久保存所有杯赛历史记录，支持搜索和查看
-- **批量操作**: 支持批量开始比赛，提升操作效率
+- 用户注册、登录，支持邮箱或用户名登录。
+- 管理员用户管理：启用/禁用、重置密码、软删除用户。
+- 杯赛管理：淘汰赛、联赛、小组赛 + 淘汰赛。
+- 创建杯赛时可选择俱乐部杯赛或国家队杯赛。
+- 俱乐部杯赛支持真实俱乐部候选、队徽、国旗、国家筛选。
+- 国家队杯赛使用离线静态国家列表，不实时抓取。
+- 内置 2026 美加墨世界杯模板：
+  - 一键创建 48 队真实赛事骨架。
+  - 小组赛真实分组、赛程、场馆。
+  - 32 强到决赛预设淘汰赛 slot 骨架。
+  - 小组赛结束后自动解析 32 强球队。
+  - 淘汰赛结束后自动解析下一轮胜者/败者 slot。
+  - 支持“随机幸运儿”：抽中球队由中国队替代，赛程位置保持不变。
+- 比赛安排支持按轮次、阶段/小组查看。
+- 比赛可自动进行，也可用“掷骰子”小游戏手动生成结果。
+- 淘汰赛平局自动进入点球大战。
+- 小组积分榜、晋级图、球队列表默认折叠，可点击展开。
+- 国旗和队徽图片走后端代理，提高国内访问稳定性。
+- Docker Compose 部署，默认前端端口 `9300`。
 
-## 🚀 技术栈
+## 技术栈
 
 ### 前端
-- React 18 + TypeScript
-- Tailwind CSS 样式框架
-- React Router 路由管理
-- Axios HTTP客户端
-- Vite 构建工具
+
+- React 18
+- TypeScript
+- Vite
+- Tailwind CSS
+- React Router
+- Axios
 
 ### 后端
-- Node.js + Express
+
+- Node.js
+- Express
 - TypeScript
-- TypeORM 数据库ORM
-- SQLite 数据库 (开发) / PostgreSQL (生产)
-- JWT 认证
-- bcryptjs 密码加密
+- TypeORM
+- SQLite
+- JWT
+- bcryptjs
 
-## 📦 安装和运行
+## 本地开发
 
-### 前置要求
-- Node.js 16+
-- npm 或 yarn
-
-### 方法一：使用启动脚本（推荐 Windows 用户）
-
-双击运行 `start.bat`，脚本会自动检查并安装所有依赖，然后启动应用。
+### 安装依赖
 
 ```bash
-start.bat
-```
-
-脚本功能：
-- 自动检测 Node.js 环境
-- 自动安装所有依赖（根目录、后端、前端）
-- 一键启动前后端服务
-
-### 方法二：手动安装和运行
-
-1. 克隆项目
-```bash
-git clone https://github.com/your-username/football-glory-hall.git
-cd football-glory-hall
-```
-
-2. 安装依赖
-```bash
-# 安装根目录依赖
 npm install
-
-# 安装后端依赖
-cd server
-npm install
-
-# 安装前端依赖
-cd ../client
-npm install
+cd server && npm install
+cd ../client && npm install
 ```
 
-3. 配置环境变量
-```bash
-# 后端环境变量
-cd server
-cp .env.example .env
-# 编辑 .env 文件，设置JWT_SECRET等
+### 环境变量
+
+根目录可创建 `.env`：
+
+```env
+JWT_SECRET=change-this-secret
+FOOTBALL_API_KEY=
+FOOTBALL_API_URL=https://v3.football.api-sports.io
 ```
 
-4. 初始化数据库
-```bash
-cd server
-npm run db:init
-```
+`FOOTBALL_API_KEY` 可选。没有 API key 时，系统仍可使用内置球队/国家队数据。
 
-5. 启动开发服务器
+### 启动开发服务
+
 ```bash
-# 从根目录启动前后端
-cd ..
 npm run dev
 ```
 
-应用将运行在：
-- 前端: http://localhost:9300
-- 后端: http://localhost:5000
+默认地址：
 
-## 🏆 高级功能：真实足球数据API
+- 前端：http://localhost:9300
+- 后端：http://localhost:5005
 
-### 配置Football API（可选）
+也可以分别启动：
 
-项目支持接入真实的足球数据API，让球队信息更加真实。
-
-#### 快速配置：
 ```bash
-cd server
-cp .env.example .env
-# 编辑 .env 文件，添加你的API密钥
+npm run client:dev
+npm run server:dev
 ```
 
-#### 注册免费API密钥：
-1. 访问 [API-Football](https://www.api-football.com/)
-2. 注册免费账号（每月10000次请求）
-3. 获取API密钥
-4. 填入 `.env` 文件的 `FOOTBALL_API_KEY` 配置项
+## Docker 部署
 
-详细配置说明请查看 [FOOTBALL_API_SETUP.md](./FOOTBALL_API_SETUP.md)
+推荐服务器运行：
 
-### API功能特性：
-- ✅ 自动获取五大联赛真实球队
-- ✅ 真实球队徽标、国家、成立年份
-- ✅ 基于阵容的智能实力计算
-- ✅ API故障自动回退机制
-
-## 🎮 使用指南
-
-### 1. 创建账户
-访问 http://localhost:9300 注册新账户或登录
-
-### 2. 创建杯赛
-1. 登录后进入"杯赛管理"
-2. 点击"创建新杯赛"
-3. 设置杯赛名称、描述、类型和球队数量
-4. 系统会自动生成相应的球队
-
-### 3. 开始比赛
-1. 在杯赛详情中选择一场比赛
-2. 点击"开始模拟比赛"
-3. 查看详细的比赛结果和数据统计
-
-### 4. 查看历史
-所有完成的杯赛都会自动记录在"荣耀殿堂"中
-
-## 🏗️ 项目结构
-
-```
-football-glory-hall/
-├── client/                 # 前端React应用
-│   ├── src/
-│   │   ├── components/     # 可复用组件
-│   │   ├── pages/          # 页面组件
-│   │   ├── contexts/       # React上下文
-│   │   ├── services/       # API服务
-│   │   ├── types/          # TypeScript类型定义
-│   │   └── utils/          # 工具函数
-├── server/                 # 后端Express应用
-│   ├── src/
-│   │   ├── controllers/    # 控制器
-│   │   ├── models/         # 数据库模型
-│   │   ├── routes/         # API路由
-│   │   ├── services/       # 业务逻辑
-│   │   ├── middleware/     # 中间件
-│   │   └── config/         # 配置文件
-├── shared/                 # 共享类型和工具
-└── data/                   # 数据库文件
-```
-
-## 📊 API端点
-
-### 认证
-- POST `/api/auth/register` - 用户注册
-- POST `/api/auth/login` - 用户登录
-- GET `/api/auth/profile` - 获取用户信息
-
-### 杯赛
-- GET `/api/tournaments` - 获取所有杯赛
-- POST `/api/tournaments` - 创建新杯赛
-- GET `/api/tournaments/:id` - 获取特定杯赛
-- PUT `/api/tournaments/:id` - 更新杯赛
-- DELETE `/api/tournaments/:id` - 删除杯赛
-
-### 比赛
-- GET `/api/matches` - 获取所有比赛
-- GET `/api/matches/:id` - 获取特定比赛
-- POST `/api/matches/:id/simulate` - 模拟比赛
-- GET `/api/matches/:id/statistics` - 获取比赛统计
-
-### 历史记录
-- GET `/api/historical` - 获取所有历史记录
-- GET `/api/historical/user` - 获取用户历史记录
-- POST `/api/historical` - 从杯赛创建历史记录
-
-## 🔧 开发
-
-### 开发模式
 ```bash
-# 启动所有服务
-npm run dev
-
-# 单独启动前端
-cd client && npm run dev
-
-# 单独启动后端
-cd server && npm run dev
+docker compose up -d --build
 ```
 
-### 构建生产版本
+访问：
+
+```text
+http://服务器IP:9300
+```
+
+查看运行状态：
+
 ```bash
-# 构建所有
-npm run build
-
-# 构建前端
-cd client && npm run build
-
-# 构建后端
-cd server && npm run build
+docker compose ps
+docker compose logs -f
 ```
 
-### 数据库迁移
+健康检查：
+
 ```bash
-cd server
-npm run db:init    # 初始化数据库
-npm run db:seed    # 添加测试数据
+curl http://localhost:9300/api/health
 ```
 
-## 🚀 部署
+## 常用命令
 
-### 使用Vercel部署前端
-1. 连接GitHub仓库到Vercel
-2. 设置构建命令：`npm run client:build`
-3. 设置输出目录：`client/dist`
+### 构建
 
-### 使用Render部署后端
-1. 连接GitHub仓库到Render
-2. 设置构建命令：`npm install && npm run server:build`
-3. 设置启动命令：`npm start`
-4. 配置环境变量
+```bash
+npm run client:build
+npm run server:build
+```
 
-## 📝 待办功能
+### 查看 Git 状态
 
-### 已实现 ✅
-- ✅ Football API 集成，获取真实球队数据
-- ✅ 批量开始比赛功能
-- ✅ 杯赛详情页面直接开始比赛
-- ✅ 启动脚本和自动化依赖安装
+```bash
+git status --short
+```
 
-### 计划中 🚀
-- [ ] 实时比赛直播文字
-- [ ] 球员转会系统
-- [ ] 更复杂的战术设置
-- [ ] 用户头像和自定义
-- [ ] 比赛回放系统
-- [ ] 社交分享功能
-- [ ] 移动端适配优化
-- [ ] 多语言支持
-- [ ] 高级统计分析
-- [ ] 成就系统
-- [ ] 3D比赛可视化
-- [ ] 实时比分推送
-- [ ] 多人在线对战
-- [ ] 自定义联赛规则
-- [ ] 伤病和转会市场
-- [ ] 青训系统
-- [ ] 财务管理
+### 推送到 GitHub
 
-## 🤝 贡献
+如果当前分支是 `master`：
 
-1. Fork 项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
+```bash
+git push -u origin master
+```
 
-## 📄 许可证
+如果要改成 `main`：
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+```bash
+git branch -M main
+git push -u origin main
+```
 
-## 🙏 致谢
+## 默认端口
 
-- 灵感来源于《冠军足球经理》系列游戏
-- 感谢所有开源社区的支持
+- 前端开发端口：`9300`
+- Docker 前端端口：`9300`
+- 后端端口：`5005`
 
----
+## 数据说明
 
-**享受你的足球经理之旅！** ⚽🎮
+- SQLite 数据默认保存在 `server/data/database.sqlite`。
+- `.env`、数据库文件、`node_modules`、构建产物已加入忽略，不应提交到 Git。
+- 国家队国家列表是离线静态数据，口径为 UN 会员国 + 观察员国。
+- 真实赛事模板是离线静态模板，不在运行时实时抓取。
+
+## 主要页面
+
+- 首页：根据登录状态跳转到注册/杯赛管理。
+- 杯赛管理：创建杯赛、2026 世界杯模板、随机幸运儿、删除/启动/查看杯赛。
+- 杯赛详情：参赛球队、小组积分榜、杯赛晋级图、比赛安排、比赛结果。
+- 比赛详情：查看单场比赛状态、结果和统计。
+- 管理员用户管理：管理员可管理系统用户。
+
+## 备注
+
+2026 美加墨世界杯模板中，普通比赛结果仍由本系统模拟或掷骰子生成；真实模板负责分组、赛程、场馆和淘汰赛骨架，不代表真实比赛结果。
