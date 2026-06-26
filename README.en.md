@@ -9,7 +9,7 @@ Football Glory Hall is a football cup simulation and glory-record system. It sup
 Demo URL:
 
 ```text
-http://146.56.145.201:9300/
+http://115.159.83.30:9300/
 ```
 
 Demo account:
