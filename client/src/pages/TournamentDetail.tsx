@@ -501,6 +501,7 @@ const TournamentDetail: React.FC = () => {
   const aiRunTokenRef = useRef(0);
   const aiVoiceQueueRef = useRef<Array<{ text: string; urgent: boolean }>>([]);
   const aiVoicePlayingRef = useRef(false);
+  const spokenAIEventKeysRef = useRef<Set<string>>(new Set());
   const manualRollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const manualRollSessions = useRef<Record<string, ManualRollSession>>({});
   const [query, setQuery] = useState('');
@@ -648,11 +649,20 @@ const TournamentDetail: React.FC = () => {
     setPenaltyKicks([]);
     setPenaltyDiceOpen(false);
   };
-  const speakAIEvents = (session: AIMatchSession, previousEventCount: number) => {
+  const getAIEventVoiceKey = (event: AIMatchEvent) => [
+    event.minute,
+    event.type,
+    event.team,
+    event.player || '',
+    event.broadcastText || event.text || ''
+  ].join('|');
+  const speakAIEvents = (session: AIMatchSession, previousEventCount?: number) => {
     if (!aiVoiceEnabled || !('speechSynthesis' in window)) return;
-    const newEvents = (session.events || []).slice(previousEventCount);
+    const candidateEvents = previousEventCount === undefined ? (session.events || []) : (session.events || []).slice(previousEventCount);
+    const newEvents = candidateEvents.filter(event => !isPendingInteractiveAIEvent(event) && !spokenAIEventKeysRef.current.has(getAIEventVoiceKey(event)));
     const latestEvent = newEvents[newEvents.length - 1];
     if (!latestEvent) return;
+    newEvents.forEach(event => spokenAIEventKeysRef.current.add(getAIEventVoiceKey(event)));
     const urgent = isUrgentAIEvent(latestEvent);
     const text = urgent ? formatAIUrgentBroadcastText(latestEvent, session, language) : formatAIBroadcastText(latestEvent, session, language);
     if (!text) return;
@@ -715,6 +725,7 @@ const TournamentDetail: React.FC = () => {
     setAiInteractiveEvent(null);
     setAiAutoShotResolution(false);
     aiAutoShotResolutionRef.current = false;
+    spokenAIEventKeysRef.current = new Set();
     setAiVoiceEnabled(true);
   };
   const startAIDuel = async () => {
@@ -782,7 +793,9 @@ const TournamentDetail: React.FC = () => {
           halftimeHandled = true;
           setAiHalftimePaused(true);
           setAiRunning(false);
-          if (aiVoiceEnabled && 'speechSynthesis' in window) {
+          const halftimeVoiceKey = `${current.id}|halftime`;
+          if (aiVoiceEnabled && 'speechSynthesis' in window && !spokenAIEventKeysRef.current.has(halftimeVoiceKey)) {
+            spokenAIEventKeysRef.current.add(halftimeVoiceKey);
             const utterance = new SpeechSynthesisUtterance(language === 'en' ? 'The first half is over. The players head back to the dressing rooms. We will continue after halftime.' : '上半场比赛结束，双方球员回到更衣室，中场休息后我们继续。');
             utterance.lang = language === 'en' ? 'en-US' : 'zh-CN';
             utterance.rate = 1.22;
@@ -1167,7 +1180,7 @@ const TournamentDetail: React.FC = () => {
       </div>
       {manualMatch && <ManualMatchModal match={manualMatch} game={manualGame} submitting={submittingManual} complete={manualReadyToSave} normalComplete={manualGameComplete} needsPenalty={manualNeedsPenalty} penaltyComplete={penaltyComplete} penaltyKicks={penaltyKicks} penaltyDiceOpen={penaltyDiceOpen} rollingCount={manualRollingCount} rollAllUsed={manualRollAllUsed} anyRollStarted={manualAnyRollStarted} autoSubmit={manualAutoSubmit} saved={manualSaved} onClose={() => { clearAllManualRollTimers(); setManualAutoSubmit(false); setManualRollAllUsed(false); setManualSaved(false); setPenaltyKicks([]); setPenaltyDiceOpen(false); setManualMatch(null); }} onRoll={rollManualSide} onRollAll={rollAllManualSides} onRequestLanding={requestManualLanding} onPenaltyRoll={autoCompletePenaltyShootout} onPenaltyManualRoll={openPenaltyDice} onPenaltyDiceClose={() => setPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeManualPenaltyKick(shooter, keeper); setPenaltyDiceOpen(false); }} onSubmit={submitManualMatch} getScore={getManualScore} />}
       {syncRealResult && <SyncRealResultModal result={syncRealResult} onClose={() => setSyncRealResult(null)} />}
-      {aiMatch && <AIMatchModal match={aiMatch} session={aiSession} duration={aiDuration} running={aiRunning} saving={aiSaving} finishing={aiFinishing} voiceEnabled={aiVoiceEnabled} autoShotResolution={aiAutoShotResolution} halftimePaused={aiHalftimePaused} interactiveEvent={aiInteractiveEvent} penaltyKicks={aiPenaltyKicks} penaltyDiceOpen={aiPenaltyDiceOpen} isAdmin={user?.role === 'admin'} onDurationChange={setAiDuration} onVoiceChange={setAiVoiceEnabled} onAutoShotResolutionChange={setAiAutoShotResolution} onContinueSecondHalf={continueAISecondHalf} onInteractiveDiceClose={() => { aiInteractiveResolver.current?.(); aiInteractiveResolver.current = null; setAiInteractiveEvent(null); setAiRunning(true); }} onInteractiveDiceComplete={(shooter, keeper) => { aiInteractiveResolver.current?.({ shooter, keeper }); aiInteractiveResolver.current = null; }} onStart={startAIDuel} onFinish={finishAIDuel} onSave={saveAIDuel} onPenaltyRoll={autoCompleteAIPenaltyShootout} onPenaltyManualRoll={() => { stopAIVoice(); setAiPenaltyDiceOpen(true); }} onPenaltyDiceClose={() => setAiPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeAIPenaltyKick(shooter, keeper); setAiPenaltyDiceOpen(false); }} onClose={() => { stopAIVoice(); aiHalftimeResolver.current?.(); aiInteractiveResolver.current?.(); aiHalftimeResolver.current = null; aiInteractiveResolver.current = null; setAiMatch(null); setAiSession(null); setAiRunning(false); setAiHalftimePaused(false); setAiInteractiveEvent(null); setAiPenaltyKicks([]); setAiPenaltyDiceOpen(false); }} />}
+      {aiMatch && <AIMatchModal match={aiMatch} session={aiSession} duration={aiDuration} running={aiRunning} saving={aiSaving} finishing={aiFinishing} voiceEnabled={aiVoiceEnabled} autoShotResolution={aiAutoShotResolution} halftimePaused={aiHalftimePaused} interactiveEvent={aiInteractiveEvent} penaltyKicks={aiPenaltyKicks} penaltyDiceOpen={aiPenaltyDiceOpen} isAdmin={user?.role === 'admin'} onDurationChange={setAiDuration} onVoiceChange={setAiVoiceEnabled} onAutoShotResolutionChange={setAiAutoShotResolution} onContinueSecondHalf={continueAISecondHalf} onInteractiveDiceClose={() => { aiInteractiveResolver.current?.(); aiInteractiveResolver.current = null; setAiInteractiveEvent(null); setAiRunning(true); }} onInteractiveDiceComplete={(shooter, keeper) => { aiInteractiveResolver.current?.({ shooter, keeper }); aiInteractiveResolver.current = null; }} onStart={startAIDuel} onFinish={finishAIDuel} onSave={saveAIDuel} onPenaltyRoll={autoCompleteAIPenaltyShootout} onPenaltyManualRoll={() => { stopAIVoice(); setAiPenaltyDiceOpen(true); }} onPenaltyDiceClose={() => setAiPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeAIPenaltyKick(shooter, keeper); setAiPenaltyDiceOpen(false); }} onClose={() => { stopAIVoice(); spokenAIEventKeysRef.current = new Set(); aiHalftimeResolver.current?.(); aiInteractiveResolver.current?.(); aiHalftimeResolver.current = null; aiInteractiveResolver.current = null; setAiMatch(null); setAiSession(null); setAiRunning(false); setAiHalftimePaused(false); setAiInteractiveEvent(null); setAiPenaltyKicks([]); setAiPenaltyDiceOpen(false); }} />}
       <FloatingScrollToolbar onTop={scrollToPageTop} onBottom={scrollToPageBottom} onNextMatch={handleJumpToNextScheduledMatch} hasNextMatch={Boolean(nextScheduledMatch)} />
     </div>
   );
@@ -1620,6 +1633,7 @@ const AIMatchModal: React.FC<{
   const [crowdEnabled, setCrowdEnabled] = useState(true);
   const [startOptionsOpen, setStartOptionsOpen] = useState(false);
   const [goalFlash, setGoalFlash] = useState(false);
+  const [goalNotice, setGoalNotice] = useState<{ teamName: string; score: string } | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
   const clockStartedAt = useRef<number>();
   const previousScoreRef = useRef('0-0');
@@ -1676,11 +1690,19 @@ const AIMatchModal: React.FC<{
       previousScoreRef.current = currentScore;
       previousCrowdEventCountRef.current = 0;
       setGoalFlash(false);
+      setGoalNotice(null);
       return;
     }
     if (previousScoreRef.current !== currentScore) {
+      const [previousHome, previousAway] = previousScoreRef.current.split('-').map(value => Number(value) || 0);
+      const scoringTeamName = (session.homeScore || 0) > previousHome
+        ? match.homeTeam?.name || '主队'
+        : (session.awayScore || 0) > previousAway
+          ? match.awayTeam?.name || '客队'
+          : '进攻方';
       previousScoreRef.current = currentScore;
       setGoalFlash(true);
+      setGoalNotice({ teamName: scoringTeamName, score: currentScore });
       if (crowdAudioRef.current) {
         const now = crowdAudioRef.current.context.currentTime;
         crowdAudioRef.current.gain.gain.cancelScheduledValues(now);
@@ -1688,10 +1710,13 @@ const AIMatchModal: React.FC<{
         crowdAudioRef.current.gain.gain.linearRampToValueAtTime(0.24, now + 0.15);
         crowdAudioRef.current.gain.gain.linearRampToValueAtTime(0.075, now + 3.4);
       }
-      const timer = window.setTimeout(() => setGoalFlash(false), 3600);
+      const timer = window.setTimeout(() => {
+        setGoalFlash(false);
+        setGoalNotice(null);
+      }, 3600);
       return () => window.clearTimeout(timer);
     }
-  }, [session?.homeScore, session?.awayScore, session?.id]);
+  }, [match.awayTeam?.name, match.homeTeam?.name, session?.homeScore, session?.awayScore, session?.id]);
 
   useEffect(() => {
     if (!session || !crowdAudioRef.current) return;
@@ -1794,6 +1819,15 @@ const AIMatchModal: React.FC<{
         <div className="mt-2 rounded-lg border border-emerald-100 bg-white px-4 py-3 text-sm text-gray-800 shadow-sm">
           {halftimePaused ? '球员回到更衣室，解说席稍作调整。' : latestCommentary || '解说席正在连线，等待开球哨响。'}
         </div>
+        {goalNotice && (
+          <div className="mt-3 rounded-lg border-2 border-yellow-300 bg-gradient-to-r from-yellow-300 via-red-500 to-pink-600 px-5 py-4 text-white shadow-lg goal-scoreboard-blast">
+            <div className="text-xs font-bold uppercase tracking-widest">GOAL</div>
+            <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
+              <div className="text-2xl font-black">进球啦！{goalNotice.teamName}</div>
+              <div className="rounded bg-black/25 px-3 py-1 text-2xl font-black tabular-nums">{goalNotice.score}</div>
+            </div>
+          </div>
+        )}
         {isAdmin && debugOpen && (
           <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
             <div className="flex flex-wrap items-center justify-between gap-2">
