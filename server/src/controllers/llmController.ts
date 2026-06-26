@@ -309,6 +309,19 @@ const mergeStatistics = (current: any, delta: any) => {
   };
 };
 
+const toVisibleAIMatchEvents = (
+  events: any[],
+  llmTexts = new Map<number, string>(),
+  llmBroadcastTexts = new Map<number, string>()
+) => events
+  .map((event, index) => {
+    const text = llmTexts.get(index);
+    const broadcastText = llmBroadcastTexts.get(index);
+    if (event.type === 'commentary' && !text && !broadcastText) return null;
+    return { ...event, text: text || event.text, broadcastText };
+  })
+  .filter(Boolean);
+
 export class LLMController {
   static async diceCommentary(req: AuthRequest, res: Response) {
     const effectiveSetting = await getEffectiveLLMSetting(req.user!.id);
@@ -594,15 +607,7 @@ export class LLMController {
     session.currentMinute = engineResult.nextMinute;
     session.homeScore += engineResult.scoreDelta.home;
     session.awayScore += engineResult.scoreDelta.away;
-    const visibleEvents = engineResult.events
-      .map((event, index) => {
-        const text = llmTexts.get(index);
-        const broadcastText = llmBroadcastTexts.get(index);
-        if (event.type === 'commentary' && !text && !broadcastText) return null;
-        return { ...event, text: text || event.text, broadcastText };
-      })
-      .filter(Boolean);
-    session.events = [...(session.events || []), ...visibleEvents];
+    session.events = [...(session.events || []), ...toVisibleAIMatchEvents(engineResult.events, llmTexts, llmBroadcastTexts)];
     session.statistics = mergeStatistics(session.statistics, engineResult.statisticsDelta || {});
     session.engineState = engineResult.engineState;
     session.status = engineResult.nextMinute >= 90 ? 'finished' : 'running';
@@ -635,7 +640,7 @@ export class LLMController {
       session.currentMinute = result.nextMinute;
       session.homeScore += result.scoreDelta.home;
       session.awayScore += result.scoreDelta.away;
-      session.events = [...(session.events || []), ...result.events];
+      session.events = [...(session.events || []), ...toVisibleAIMatchEvents(result.events)];
       session.statistics = mergeStatistics(session.statistics, result.statisticsDelta || {});
       session.engineState = result.engineState;
     }

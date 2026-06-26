@@ -767,12 +767,10 @@ const TournamentDetail: React.FC = () => {
           }
           if (diceResult) {
             const goal = diceResult.shooter > 0 && diceResult.shooter >= diceResult.keeper;
-            const cleanText = interactiveEvent.text
-              .replace(new RegExp(`^第?${interactiveEvent.minute}['’分钟\\s，,：:]*`), '')
-              .replace(/[。.!！?？\s]+$/, '');
+            const playerText = interactiveEvent.player ? `${interactiveEvent.player}` : (language === 'en' ? 'the attacker' : '进攻球员');
             const feedbackText = language === 'en'
-              ? `God dice decision: ${cleanText}. ${diceResult.shooter === 0 ? 'The shot flies wide.' : goal ? 'The ball is in.' : 'The goalkeeper saves it.'}`
-              : `上帝摇骰子判定：${cleanText}。${diceResult.shooter === 0 ? '射门打飞。' : goal ? '皮球入网。' : '门将扑出。'}`;
+              ? `${interactiveEvent.minute}' ${playerText}: ${diceResult.shooter === 0 ? 'the shot flies wide.' : goal ? 'the ball is in.' : 'the goalkeeper saves it.'}`
+              : `${interactiveEvent.minute}' ${playerText}${diceResult.shooter === 0 ? '这脚射门打飞。' : goal ? '完成破门，皮球入网。' : '的射门被门将扑出。'}`;
             const feedbackPreviousEventCount = current.events?.length || 0;
             const feedback = await llmAPI.appendSessionEvent(current.id, {
               minute: interactiveEvent.minute,
@@ -791,21 +789,22 @@ const TournamentDetail: React.FC = () => {
         }
         if (!halftimeHandled && current.currentMinute >= 45 && current.status !== 'finished') {
           halftimeHandled = true;
-          setAiHalftimePaused(true);
-          setAiRunning(false);
+          const autoContinueSecondHalf = aiAutoShotResolutionRef.current;
+          if (!autoContinueSecondHalf) {
+            setAiHalftimePaused(true);
+            setAiRunning(false);
+          }
           const halftimeVoiceKey = `${current.id}|halftime`;
           if (aiVoiceEnabled && 'speechSynthesis' in window && !spokenAIEventKeysRef.current.has(halftimeVoiceKey)) {
             spokenAIEventKeysRef.current.add(halftimeVoiceKey);
-            const utterance = new SpeechSynthesisUtterance(language === 'en' ? 'The first half is over. The players head back to the dressing rooms. We will continue after halftime.' : '上半场比赛结束，双方球员回到更衣室，中场休息后我们继续。');
-            utterance.lang = language === 'en' ? 'en-US' : 'zh-CN';
-            utterance.rate = 1.22;
-            utterance.pitch = 1.08;
-            window.speechSynthesis.speak(utterance);
+            enqueueAIVoice(language === 'en' ? 'The first half is over. The players head back to the dressing rooms. We will continue after halftime.' : '上半场比赛结束，双方球员回到更衣室，中场休息后我们继续。', 'queue');
           }
-          await new Promise<void>(resolve => { aiHalftimeResolver.current = resolve; });
-          if (aiRunTokenRef.current !== runToken) return;
-          setAiHalftimePaused(false);
-          setAiRunning(true);
+          if (!autoContinueSecondHalf) {
+            await new Promise<void>(resolve => { aiHalftimeResolver.current = resolve; });
+            if (aiRunTokenRef.current !== runToken) return;
+            setAiHalftimePaused(false);
+            setAiRunning(true);
+          }
         }
         if (current.status !== 'finished') await wait(Math.max(0, intervalMs - (Date.now() - stepStartedAt)));
       }
@@ -1872,7 +1871,7 @@ const AIMatchModal: React.FC<{
               <div className="flex items-center justify-between gap-4 text-sm text-blue-950">
                 <span>
                   <span className="font-semibold">自动判定射门</span>
-                  <span className="ml-2 text-blue-800">开启后不弹出“上帝正在掷射门骰子”，系统自动掷骰并继续比赛。</span>
+                  <span className="ml-2 text-blue-800">开启后不弹出“上帝正在掷射门骰子”，系统自动掷骰；中场也会自动进入下半场。</span>
                 </span>
                 <button type="button" role="switch" aria-checked={autoShotResolution} onClick={() => onAutoShotResolutionChange(!autoShotResolution)} className={`relative inline-flex h-8 w-16 flex-shrink-0 items-center rounded-full p-1 transition-colors ${autoShotResolution ? 'bg-green-500' : 'bg-gray-300'}`}>
                   <span className={`h-6 w-6 rounded-full bg-white shadow transition-transform ${autoShotResolution ? 'translate-x-8' : 'translate-x-0'}`} />
