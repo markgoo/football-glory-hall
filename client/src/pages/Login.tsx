@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Lock, Eye, EyeOff } from 'lucide-react';
+import { useI18n } from '../contexts/I18nContext';
 
 const Login: React.FC = () => {
   const [identifier, setIdentifier] = useState('');
@@ -9,37 +10,35 @@ const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const { login } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
     setLoading(true);
 
     try {
       await login(identifier, password);
-      console.log('Login successful, navigating to tournaments');
-      navigate('/tournaments');  // 改为跳转到杯赛管理
+      navigate('/tournaments');
     } catch (error: any) {
-      setError(error.response?.data?.error || '登录失败');
+      setError(error.response?.data?.error || t('auth.loginFailed'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            登录你的账户
-          </h2>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">{t('auth.loginTitle')}</h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            或者{' '}
+            {t('auth.or')}{' '}
             <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
-              创建一个新账户
+              {t('auth.createAccount')}
             </Link>
           </p>
         </div>
@@ -51,72 +50,56 @@ const Login: React.FC = () => {
             </div>
           )}
 
-          <div className="rounded-md shadow-sm space-y-4">
-            <div>
-              <label htmlFor="identifier" className="block text-sm font-medium text-gray-700">
-                用户名或邮箱
-              </label>
-              <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <div className="space-y-4 rounded-md shadow-sm">
+            <label className="block">
+              <span className="block text-sm font-medium text-gray-700">{t('auth.usernameOrEmail')}</span>
+              <span className="relative mt-1 block">
+                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                   <User className="h-5 w-5 text-gray-400" />
-                </div>
+                </span>
                 <input
-                  id="identifier"
                   name="identifier"
                   type="text"
                   required
                   autoComplete="username"
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="input pl-10 w-full"
-                  placeholder="admin 或 your@email.com"
+                  onChange={(event) => setIdentifier(event.target.value)}
+                  className="input w-full pl-10"
+                  placeholder={t('auth.identifierPlaceholder')}
                 />
-              </div>
-            </div>
+              </span>
+            </label>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                密码
-              </label>
-              <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <label className="block">
+              <span className="block text-sm font-medium text-gray-700">{t('auth.password')}</span>
+              <span className="relative mt-1 block">
+                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                   <Lock className="h-5 w-5 text-gray-400" />
-                </div>
+                </span>
                 <input
-                  id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
                   required
                   autoComplete="current-password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input pl-10 pr-10 w-full"
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="input w-full pl-10 pr-10"
                   placeholder="••••••••"
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <Eye className="h-5 w-5 text-gray-400" />
-                  )}
+                <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3" onClick={() => setShowPassword(!showPassword)}>
+                  {showPassword ? <EyeOff className="h-5 w-5 text-gray-400" /> : <Eye className="h-5 w-5 text-gray-400" />}
                 </button>
-              </div>
-            </div>
+              </span>
+            </label>
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {loading ? '登录中...' : '登录'}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="group relative flex w-full justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+          >
+            {loading ? t('auth.loggingIn') : t('auth.login')}
+          </button>
         </form>
       </div>
     </div>

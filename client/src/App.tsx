@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { TournamentProvider } from './contexts/TournamentContext';
+import { I18nProvider } from './contexts/I18nContext';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -17,12 +18,13 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
-    <AuthProvider>
-      <TournamentProvider>
-        <div className="min-h-screen bg-gray-50">
-          <Navbar />
-          <main className="container mx-auto px-4 py-8">
-            <Routes>
+    <I18nProvider>
+      <AuthProvider>
+        <TournamentProvider>
+          <div className="min-h-screen bg-gray-50">
+            <Navbar />
+            <main className="container mx-auto px-4 py-8">
+              <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -90,11 +92,12 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-            </Routes>
-          </main>
-        </div>
-      </TournamentProvider>
-    </AuthProvider>
+              </Routes>
+            </main>
+          </div>
+        </TournamentProvider>
+      </AuthProvider>
+    </I18nProvider>
   );
 }
 

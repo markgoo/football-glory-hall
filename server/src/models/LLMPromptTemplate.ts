@@ -13,8 +13,14 @@ export class LLMPromptTemplate {
   @Column({ type: 'text' })
   title!: string;
 
+  @Column({ type: 'text', nullable: true })
+  titleEn?: string;
+
   @Column({ type: 'text' })
   content!: string;
+
+  @Column({ type: 'text', nullable: true })
+  contentEn?: string;
 
   @Column({ type: 'boolean', default: true })
   isActive: boolean = true;

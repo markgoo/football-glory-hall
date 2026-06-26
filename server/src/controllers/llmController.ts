@@ -3,17 +3,40 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { AppDataSource } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { AIMatchSession } from '../models/AIMatchSession';
 import { LLMSetting } from '../models/LLMSetting';
 import { LLMPromptTemplate, LLMPromptTemplateKey } from '../models/LLMPromptTemplate';
-import { AIMatchSession } from '../models/AIMatchSession';
 import { Match } from '../models/Match';
 import { Team, TeamPlayer } from '../models/Team';
 import { AIMatchEngine } from '../services/aiMatchEngine';
+import FootballAPIService from '../services/footballAPIService';
 
 const ENCRYPTION_PREFIX = 'enc:v1:';
 const PROMPT_KEYS: LLMPromptTemplateKey[] = ['match_intro', 'match_step', 'match_summary'];
+type UILanguage = 'zh' | 'en';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const normalizeLanguage = (value: any): UILanguage => value === 'en' ? 'en' : 'zh';
+const normalizeApiBaseUrl = (value: string) => value.replace(/\/+$/, '');
+
+const languageName = (language: UILanguage) => language === 'en' ? 'English' : 'Simplified Chinese';
+const languageInstruction = (language: UILanguage) => {
+  if (language === 'en') {
+    return [
+      'Output language: English.',
+      'You are a football radio commentator. Use natural football commentary, not generic AI narration.',
+      'Only polish the already-decided events. Do not invent goals, scores, shots, corners, cards, injuries, substitutions, or statistics.',
+      'Return strict JSON only: {"events":[{"index":0,"text":"polished English commentary"}]}.'
+    ].join('\n');
+  }
+
+  return [
+    '输出语言：简体中文。',
+    '你是足球广播解说员，语气要像真实足球解说，不要出现模板化开场。',
+    '你只负责润色系统已经决定的比赛事件，禁止新增进球、比分、射门、角球、红黄牌、伤病、换人或任何统计。',
+    '严格只返回 JSON：{"events":[{"index":0,"text":"润色后的中文解说"}]}。'
+  ].join('\n');
+};
 
 const getEncryptionKey = () => {
   const secret = process.env.LLM_SECRET || process.env.JWT_SECRET || 'football-glory-hall-local-secret';
@@ -74,9 +97,9 @@ const playerPositionBucket = (position?: string) => {
 };
 
 const roleBucket = (role: string) => {
-  if (/门将|闂ㄥ皢/.test(role)) return 'goalkeeper';
-  if (/后卫|翼卫|悗鍗|考鍗/.test(role)) return 'defender';
-  if (/中场|前腰|后腰|前卫|涓満|叞|鑵|腑鍦/.test(role)) return 'midfielder';
+  if (/门将/.test(role)) return 'goalkeeper';
+  if (/后卫|翼卫/.test(role)) return 'defender';
+  if (/中场|前腰|后腰/.test(role)) return 'midfielder';
   return 'attacker';
 };
 
@@ -98,7 +121,9 @@ const buildLineupFromRealPlayers = (team: Team, positions: string[]) => {
     const player = pickPlayer(position);
     return {
       number: player?.number || index + 1,
-      name: player?.name || `${team.shortName || team.name.slice(0, 3).toUpperCase()}-${position}-${index + 1}`,
+      name: player?.nameZh || player?.name || player?.nameEn || `${team.shortName || team.name.slice(0, 3).toUpperCase()}-${position}-${index + 1}`,
+      nameEn: player?.nameEn || player?.name,
+      nameZh: player?.nameZh,
       position,
       originalPosition: player?.position,
       photo: player?.photo,
@@ -107,6 +132,47 @@ const buildLineupFromRealPlayers = (team: Team, positions: string[]) => {
       source: player ? team.playerSource || 'api-football' : 'generated'
     };
   });
+};
+
+const normalizeApiPlayerPosition = (position?: string) => {
+  const value = String(position || '').toLowerCase();
+  if (value.includes('goalkeeper')) return '门将';
+  if (value.includes('defender')) return '后卫';
+  if (value.includes('midfielder')) return '中场';
+  if (value.includes('attacker')) return '前锋';
+  return position || '球员';
+};
+
+const hydrateMissingRealPlayers = async (team: Team, national: boolean) => {
+  if (team.playerSource === 'api-football' && Array.isArray(team.players) && team.players.length > 0) return team;
+
+  try {
+    const { apiId, squad } = await FootballAPIService.getResolvedTeamSquad({
+      name: team.name,
+      country: team.country,
+      preferredId: team.externalApiId,
+      national
+    });
+    if (apiId) team.externalApiId = apiId;
+    if (squad?.players?.length) {
+      team.players = squad.players.map((player: any, index: number) => ({
+        id: player.id,
+        name: player.name || `Player ${index + 1}`,
+        nameEn: player.name || `Player ${index + 1}`,
+        age: player.age,
+        number: player.number || index + 1,
+        position: normalizeApiPlayerPosition(player.position),
+        photo: player.photo
+      }));
+      team.playerSource = 'api-football';
+      team.playersSyncedAt = new Date();
+      await AppDataSource.getRepository(Team).save(team);
+    }
+  } catch (error: any) {
+    console.warn(`Failed to hydrate AI duel players for ${team.name}:`, error.message);
+  }
+
+  return team;
 };
 
 const buildTeamPlan = (team: Team, opponent: Team) => {
@@ -136,41 +202,10 @@ const buildTeamPlan = (team: Team, opponent: Team) => {
   };
 };
 
-const normalizeApiBaseUrl = (value: string) => value.replace(/\/+$/, '');
-
 const extractJson = (content: string) => {
   const trimmed = content.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
   return JSON.parse(fenced ? fenced[1] : trimmed);
-};
-
-const buildFallbackStep = (session: AIMatchSession, match: Match, nextMinute: number) => {
-  const homeOverall = match.homeTeam?.stats?.overall || 80;
-  const awayOverall = match.awayTeam?.stats?.overall || 80;
-  const homeChance = clamp(0.08 + (homeOverall - awayOverall) / 400, 0.03, 0.18);
-  const awayChance = clamp(0.08 + (awayOverall - homeOverall) / 400, 0.03, 0.18);
-  const homeGoals = Math.random() < homeChance ? 1 : 0;
-  const awayGoals = Math.random() < awayChance ? 1 : 0;
-  const events = [];
-  if (homeGoals) events.push({ minute: nextMinute, type: 'goal', team: 'home', player: session.homePlan?.lineup?.[10]?.name || match.homeTeam?.name, text: `${match.homeTeam?.name} 抓住机会破门得分。` });
-  if (awayGoals) events.push({ minute: nextMinute, type: 'goal', team: 'away', player: session.awayPlan?.lineup?.[10]?.name || match.awayTeam?.name, text: `${match.awayTeam?.name} 反击中完成进球。` });
-  if (!events.length) events.push({ minute: nextMinute, type: 'commentary', team: 'neutral', text: '双方在中场持续争夺，比赛节奏保持紧张。' });
-  return {
-    commentary: events.map(event => event.text).join('\n'),
-    homeGoals,
-    awayGoals,
-    events,
-    statisticsDelta: {
-      homeShots: homeGoals + Math.floor(Math.random() * 3),
-      awayShots: awayGoals + Math.floor(Math.random() * 3),
-      homeShotsOnTarget: homeGoals,
-      awayShotsOnTarget: awayGoals,
-      homeCorners: Math.floor(Math.random() * 2),
-      awayCorners: Math.floor(Math.random() * 2),
-      homeFouls: Math.floor(Math.random() * 3),
-      awayFouls: Math.floor(Math.random() * 3)
-    }
-  };
 };
 
 const balancePair = (home: number, away: number, maxDiff: number, minRatio: number) => {
@@ -196,13 +231,11 @@ const mergeStatistics = (current: any, delta: any) => {
   let awayCorners = (current?.awayCorners || 0) + clamp(Number(delta?.awayCorners) || 0, 0, 2);
   [homeShots, awayShots] = balancePair(homeShots, awayShots, 10, 0.35);
   [homeCorners, awayCorners] = balancePair(homeCorners, awayCorners, 5, 0.25);
-  const homeShotsOnTarget = Math.min(homeShots, (current?.homeShotsOnTarget || 0) + clamp(Number(delta?.homeShotsOnTarget) || 0, 0, 3));
-  const awayShotsOnTarget = Math.min(awayShots, (current?.awayShotsOnTarget || 0) + clamp(Number(delta?.awayShotsOnTarget) || 0, 0, 3));
   return {
     homeShots,
     awayShots,
-    homeShotsOnTarget,
-    awayShotsOnTarget,
+    homeShotsOnTarget: Math.min(homeShots, (current?.homeShotsOnTarget || 0) + clamp(Number(delta?.homeShotsOnTarget) || 0, 0, 3)),
+    awayShotsOnTarget: Math.min(awayShots, (current?.awayShotsOnTarget || 0) + clamp(Number(delta?.awayShotsOnTarget) || 0, 0, 3)),
     homeCorners,
     awayCorners,
     homeFouls: (current?.homeFouls || 0) + clamp(Number(delta?.homeFouls) || 0, 0, 5),
@@ -291,14 +324,21 @@ export class LLMController {
     const repository = AppDataSource.getRepository(LLMPromptTemplate);
     const prompt = await repository.findOne({ where: { key: key as LLMPromptTemplateKey } });
     if (!prompt) return res.status(404).json({ error: 'Prompt not found' });
-    prompt.title = req.body.title || prompt.title;
-    prompt.content = req.body.content || prompt.content;
+    const language = normalizeLanguage(req.body.language);
+    if (language === 'en') {
+      prompt.titleEn = req.body.title || prompt.titleEn || prompt.title;
+      prompt.contentEn = req.body.content || prompt.contentEn || prompt.content;
+    } else {
+      prompt.title = req.body.title || prompt.title;
+      prompt.content = req.body.content || prompt.content;
+    }
     prompt.isActive = req.body.isActive !== undefined ? !!req.body.isActive : prompt.isActive;
     res.json(await repository.save(prompt));
   }
 
   static async createSession(req: AuthRequest, res: Response) {
     const durationMinutes = clamp(Number(req.body.durationMinutes) || 8, 4, 90);
+    const language = normalizeLanguage(req.body.language);
     const match = await AppDataSource.getRepository(Match).findOne({
       where: { id: req.params.matchId },
       relations: ['homeTeam', 'awayTeam', 'tournament', 'tournament.user']
@@ -308,31 +348,35 @@ export class LLMController {
     if (match.status !== 'scheduled') return res.status(400).json({ error: 'Only scheduled matches can start AI duel' });
     if (!match.homeTeam || !match.awayTeam) return res.status(400).json({ error: 'Teams are not assigned yet' });
 
+    const national = match.tournament?.teamCategory === 'national';
+    match.homeTeam = await hydrateMissingRealPlayers(match.homeTeam, national);
+    match.awayTeam = await hydrateMissingRealPlayers(match.awayTeam, national);
+
     const effectiveSetting = await getEffectiveLLMSetting(req.user!.id);
     const setting = effectiveSetting.setting;
     if (!setting) return res.status(400).json({ error: '请先配置 AI API 地址、Key 和模型' });
 
-    const sessionRepository = AppDataSource.getRepository(AIMatchSession);
     const homePlan = buildTeamPlan(match.homeTeam, match.awayTeam);
     const awayPlan = buildTeamPlan(match.awayTeam, match.homeTeam);
-    const session = sessionRepository.create({
+    const session = AppDataSource.getRepository(AIMatchSession).create({
       match,
       user: req.user!,
       durationMinutes,
       status: 'ready',
       model: setting.model,
+      language,
       homePlan,
       awayPlan,
       engineState: AIMatchEngine.createInitialState(match.homeTeam, match.awayTeam, homePlan, awayPlan),
       statistics: {},
       events: []
     });
-    res.status(201).json(await sessionRepository.save(session));
+    res.status(201).json(await AppDataSource.getRepository(AIMatchSession).save(session));
   }
 
   static async stepSession(req: AuthRequest, res: Response) {
-    const sessionRepository = AppDataSource.getRepository(AIMatchSession);
-    const session = await sessionRepository.findOne({
+    const repository = AppDataSource.getRepository(AIMatchSession);
+    const session = await repository.findOne({
       where: { id: req.params.sessionId },
       relations: ['match', 'match.homeTeam', 'match.awayTeam', 'match.tournament', 'match.tournament.user', 'user']
     });
@@ -345,7 +389,11 @@ export class LLMController {
     if (!setting) return res.status(400).json({ error: '请先配置 AI API' });
 
     const enginePrompts = await AppDataSource.getRepository(LLMPromptTemplate).find();
-    const engineStepPrompt = enginePrompts.find(prompt => prompt.key === 'match_step' && prompt.isActive)?.content || '';
+    const sessionLanguage = normalizeLanguage(session.language);
+    const stepPrompt = enginePrompts.find(prompt => prompt.key === 'match_step' && prompt.isActive);
+    const engineStepPrompt = sessionLanguage === 'en'
+      ? (stepPrompt?.contentEn || stepPrompt?.content || '')
+      : (stepPrompt?.content || '');
     const engineState = session.engineState || AIMatchEngine.createInitialState(session.match.homeTeam, session.match.awayTeam, session.homePlan, session.awayPlan);
     const engineResult = AIMatchEngine.simulateSegment({
       match: session.match,
@@ -363,8 +411,26 @@ export class LLMController {
         model: setting.model,
         temperature: 0.75,
         messages: [
-          { role: 'system', content: `${engineStepPrompt}\n你只负责把系统已经决定的比赛事件润色成足球广播解说。禁止新增进球、比分、射门、角球或任何统计。严格返回 JSON：{"events":[{"index":0,"text":"润色后的中文解说"}]}` },
-          { role: 'user', content: JSON.stringify({ minuteFrom: session.currentMinute, minuteTo: engineResult.nextMinute, matchTotalMinutes: 90, playbackDurationMinutes: session.durationMinutes, score: { home: session.homeScore + engineResult.scoreDelta.home, away: session.awayScore + engineResult.scoreDelta.away }, decidedEvents: engineResult.events, home: session.homePlan, away: session.awayPlan, recentEvents: (session.events || []).slice(-12) }) }
+          { role: 'system', content: `${engineStepPrompt}\n${languageInstruction(sessionLanguage)}` },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              language: sessionLanguage,
+              outputLanguage: languageName(sessionLanguage),
+              minuteFrom: session.currentMinute,
+              minuteTo: engineResult.nextMinute,
+              matchTotalMinutes: 90,
+              playbackDurationMinutes: session.durationMinutes,
+              score: {
+                home: session.homeScore + engineResult.scoreDelta.home,
+                away: session.awayScore + engineResult.scoreDelta.away
+              },
+              decidedEvents: engineResult.events,
+              home: session.homePlan,
+              away: session.awayPlan,
+              recentEvents: (session.events || []).slice(-12)
+            })
+          }
         ]
       }, {
         headers: { Authorization: `Bearer ${decrypt(setting.apiKey || '')}` },
@@ -390,75 +456,6 @@ export class LLMController {
     session.statistics = mergeStatistics(session.statistics, engineResult.statisticsDelta || {});
     session.engineState = engineResult.engineState;
     session.status = engineResult.nextMinute >= 90 ? 'finished' : 'running';
-    return res.json(await sessionRepository.save(session));
-
-    /*
-    const prompts = await AppDataSource.getRepository(LLMPromptTemplate).find();
-    const stepPrompt = prompts.find(prompt => prompt.key === 'match_step' && prompt.isActive)?.content || '';
-    const matchTotalMinutes = 90;
-    const stepSize = 5;
-    const nextMinute = Math.min(matchTotalMinutes, session.currentMinute + stepSize);
-
-    let payload: any;
-    try {
-      const response = await axios.post(`${normalizeApiBaseUrl(setting.apiBaseUrl)}/chat/completions`, {
-        model: setting.model,
-        temperature: 0.8,
-        messages: [
-          { role: 'system', content: `${stepPrompt}\n返回 JSON 格式：{"commentary":"中文解说","homeGoals":0,"awayGoals":0,"events":[{"minute":1,"type":"goal|commentary|card|injury","team":"home|away|neutral","player":"球员","text":"描述"}],"statisticsDelta":{"homeShots":0,"awayShots":0,"homeShotsOnTarget":0,"awayShotsOnTarget":0,"homeCorners":0,"awayCorners":0,"homeFouls":0,"awayFouls":0}}` },
-          { role: 'user', content: JSON.stringify({ minuteFrom: session.currentMinute, minuteTo: nextMinute, matchTotalMinutes, playbackDurationMinutes: session.durationMinutes, score: { home: session.homeScore, away: session.awayScore }, home: session.homePlan, away: session.awayPlan, recentEvents: (session.events || []).slice(-12) }) }
-        ]
-      }, {
-        headers: { Authorization: `Bearer ${decrypt(setting.apiKey)}` },
-        timeout: 30000
-      });
-      payload = extractJson(response.data?.choices?.[0]?.message?.content || '');
-    } catch (error) {
-      console.error('AI duel step failed, using fallback:', error);
-      payload = buildFallbackStep(session, session.match, nextMinute);
-    }
-
-    const currentTotalGoals = session.homeScore + session.awayScore;
-    const totalGoalLimit = 7;
-    let homeGoals = Number(payload.homeGoals) > 0 ? 1 : 0;
-    let awayGoals = Number(payload.awayGoals) > 0 ? 1 : 0;
-    if (session.homeScore - session.awayScore >= 4) homeGoals = 0;
-    if (session.awayScore - session.homeScore >= 4) awayGoals = 0;
-    if (currentTotalGoals >= totalGoalLimit) {
-      homeGoals = 0;
-      awayGoals = 0;
-    } else if (currentTotalGoals + homeGoals + awayGoals > totalGoalLimit) {
-      if (homeGoals && awayGoals) awayGoals = 0;
-      if (currentTotalGoals + homeGoals + awayGoals > totalGoalLimit) homeGoals = 0;
-    }
-    const events = Array.isArray(payload.events) ? payload.events.slice(0, 6).map((event: any) => ({
-      minute: clamp(Number(event.minute) || nextMinute, 1, matchTotalMinutes),
-      type: String(event.type || 'commentary'),
-      team: String(event.team || 'neutral'),
-      key: Boolean(event.key || ['goal', 'penalty', 'card', 'injury', 'chance', 'save'].includes(String(event.type || ''))),
-      player: event.player ? String(event.player) : undefined,
-      text: String(event.text || payload.commentary || '比赛继续进行。')
-    })) : [];
-
-    session.currentMinute = nextMinute;
-    session.homeScore += homeGoals;
-    session.awayScore += awayGoals;
-    session.events = [...(session.events || []), ...events];
-    session.statistics = mergeStatistics(session.statistics, payload.statisticsDelta || {});
-    session.status = nextMinute >= matchTotalMinutes ? 'finished' : 'running';
-    res.json(await sessionRepository.save(session));
-  }
-
-    */
-  }
-
-  static async markSaved(req: AuthRequest, res: Response) {
-    const repository = AppDataSource.getRepository(AIMatchSession);
-    const session = await repository.findOne({ where: { id: req.params.sessionId }, relations: ['user'] });
-    if (!session) return res.status(404).json({ error: 'Session not found' });
-    if (session.user.id !== req.user!.id) return res.status(403).json({ error: 'Access denied' });
-    session.status = 'saved';
-    session.savedToMatch = true;
     res.json(await repository.save(session));
   }
 
@@ -504,12 +501,13 @@ export class LLMController {
         if (Math.random() < 0.76) homePenaltyScore += 1;
         if (Math.random() < 0.76) awayPenaltyScore += 1;
       }
+      const language = normalizeLanguage(session.language);
       session.events = [...(session.events || []), {
         minute: 90,
         type: 'penalty',
         team: homePenaltyScore > awayPenaltyScore ? 'home' : 'away',
         key: true,
-        text: `点球大战自动完成：${homePenaltyScore}-${awayPenaltyScore}。`,
+        text: language === 'en' ? `Penalty shootout completed automatically: ${homePenaltyScore}-${awayPenaltyScore}.` : `点球大战自动完成：${homePenaltyScore}-${awayPenaltyScore}。`,
         engine: true,
         autoPenalty: { homePenaltyScore, awayPenaltyScore }
       }];
@@ -532,7 +530,7 @@ export class LLMController {
       team: String(req.body.team || 'neutral'),
       key: true,
       player: req.body.player ? String(req.body.player) : undefined,
-      text: String(req.body.text || '人工判定完成。'),
+      text: String(req.body.text || (normalizeLanguage(session.language) === 'en' ? 'Manual decision completed.' : '人工判定完成。')),
       manual: true,
       dice: req.body.dice
     };
@@ -560,6 +558,16 @@ export class LLMController {
     if (session.engineState) {
       session.engineState = AIMatchEngine.applyManualFeedback(session.engineState, event.type);
     }
+    res.json(await repository.save(session));
+  }
+
+  static async markSaved(req: AuthRequest, res: Response) {
+    const repository = AppDataSource.getRepository(AIMatchSession);
+    const session = await repository.findOne({ where: { id: req.params.sessionId }, relations: ['user'] });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (session.user.id !== req.user!.id) return res.status(403).json({ error: 'Access denied' });
+    session.status = 'saved';
+    session.savedToMatch = true;
     res.json(await repository.save(session));
   }
 }

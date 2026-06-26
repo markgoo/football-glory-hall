@@ -32,6 +32,36 @@ interface TeamSquadResponse {
 class FootballAPIService {
   private client: any;
   private clientInitialized = false;
+  private teamSearchCache = new Map<string, any[]>();
+  private squadCache = new Map<number, TeamSquadResponse | null>();
+  private rateLimitedUntil = 0;
+
+  private async getPersistentCache(key: string) {
+    try {
+      const { AppDataSource } = await import('../config/database');
+      const { FootballApiCache } = await import('../models/FootballApiCache');
+      if (!AppDataSource.isInitialized) return undefined;
+      const cached = await AppDataSource.getRepository(FootballApiCache).findOne({ where: { key } });
+      return cached?.value;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async setPersistentCache(key: string, value: any) {
+    try {
+      const { AppDataSource } = await import('../config/database');
+      const { FootballApiCache } = await import('../models/FootballApiCache');
+      if (!AppDataSource.isInitialized) return;
+      const repository = AppDataSource.getRepository(FootballApiCache);
+      let cached = await repository.findOne({ where: { key } });
+      if (!cached) cached = repository.create({ key, value });
+      cached.value = value;
+      await repository.save(cached);
+    } catch (error: any) {
+      console.warn('Failed to persist football API cache:', error.message);
+    }
+  }
 
   private initializeClient() {
     if (!this.clientInitialized) {
@@ -74,6 +104,10 @@ class FootballAPIService {
 
   // 获取特定联赛的球队
   async getTeamsByLeague(leagueId: number, season: number = 2023) {
+    const persistentKey = `league-teams:${leagueId}:${season}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || [];
+
     try {
       const response = await this.initializeClient().get('/teams', {
         params: {
@@ -81,7 +115,9 @@ class FootballAPIService {
           season: season
         }
       });
-      return response.data.response;
+      const teams = response.data.response || [];
+      await this.setPersistentCache(persistentKey, teams);
+      return teams;
     } catch (error: any) {
       if (error.response?.status === 403) {
         console.log(`API access forbidden (403) for league ${leagueId} - skipping`);
@@ -94,6 +130,14 @@ class FootballAPIService {
 
   // 获取球队阵容（注：当前版本不使用此方法，保留备用）
   async getTeamSquad(teamId: number) {
+    if (this.squadCache.has(teamId)) return this.squadCache.get(teamId) || null;
+    const persistentKey = `squad:${teamId}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) {
+      this.squadCache.set(teamId, persistent);
+      return persistent || null;
+    }
+    if (Date.now() < this.rateLimitedUntil) return null;
     try {
       const response = await this.initializeClient().get('/players/squads', {
         params: {
@@ -102,10 +146,17 @@ class FootballAPIService {
       });
 
       if (response.data.response && response.data.response.length > 0) {
-        return response.data.response[0] as TeamSquadResponse;
+        const squad = response.data.response[0] as TeamSquadResponse;
+        this.squadCache.set(teamId, squad);
+        await this.setPersistentCache(persistentKey, squad);
+        return squad;
       }
       return null;
     } catch (error: any) {
+      if (error.response?.status === 429) {
+        this.rateLimitedUntil = Date.now() + 60_000;
+        console.warn('Football API rate limit reached while fetching squad; skipping external squad lookups for 60 seconds');
+      }
       if (error.response?.status !== 404) {
         console.error('Failed to fetch team squad:', error.message);
       }
@@ -114,13 +165,83 @@ class FootballAPIService {
   }
 
   async getFixturesByLeagueSeason(leagueId: number, season: number) {
+    const persistentKey = `fixtures:${leagueId}:${season}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || [];
+
     try {
       const response = await this.initializeClient().get('/fixtures', {
         params: { league: leagueId, season }
       });
-      return response.data.response || [];
+      const fixtures = response.data.response || [];
+      await this.setPersistentCache(persistentKey, fixtures);
+      return fixtures;
     } catch (error: any) {
       console.error('Failed to fetch fixtures:', error.message);
+      return [];
+    }
+  }
+
+  async searchLeagues(query: string) {
+    const persistentKey = `league-search:${String(query || '').trim().toLowerCase()}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || [];
+
+    try {
+      const response = await this.initializeClient().get('/leagues', {
+        params: { search: query }
+      });
+      const leagues = response.data.response || [];
+      await this.setPersistentCache(persistentKey, leagues);
+      return leagues;
+    } catch (error: any) {
+      console.error('Failed to search leagues:', error.message);
+      return [];
+    }
+  }
+
+  async getWorldCupFixtures(season: number) {
+    const direct = await this.getFixturesByLeagueSeason(1, season);
+    if (direct.length > 0) {
+      return { fixtures: direct, leagueId: 1, leagueName: 'World Cup' };
+    }
+
+    const leagues = await this.searchLeagues('World Cup');
+    const candidates = leagues
+      .filter((item: any) => {
+        const name = String(item.league?.name || '').toLowerCase();
+        const type = String(item.league?.type || '').toLowerCase();
+        return name.includes('world cup') && type !== 'league';
+      })
+      .map((item: any) => ({
+        id: Number(item.league?.id),
+        name: String(item.league?.name || 'World Cup')
+      }))
+      .filter((item: any) => Number.isFinite(item.id));
+
+    for (const candidate of candidates) {
+      const fixtures = await this.getFixturesByLeagueSeason(candidate.id, season);
+      if (fixtures.length > 0) {
+        return { fixtures, leagueId: candidate.id, leagueName: candidate.name };
+      }
+    }
+
+    return { fixtures: [], leagueId: 1, leagueName: 'World Cup', searchedLeagueIds: candidates.map((item: any) => item.id) };
+  }
+
+  async getWorldCup26OpenGames() {
+    const persistentKey = 'worldcup26-ir:games';
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || [];
+
+    try {
+      const response = await axios.get('https://worldcup26.ir/get/games', { timeout: 15000 });
+      const data = response.data;
+      const games = Array.isArray(data?.games) ? data.games : Array.isArray(data) ? data : [];
+      await this.setPersistentCache(persistentKey, games);
+      return games;
+    } catch (error: any) {
+      console.error('Failed to fetch worldcup26.ir games:', error.message);
       return [];
     }
   }
@@ -128,13 +249,30 @@ class FootballAPIService {
   async searchTeams(query: string) {
     const search = String(query || '').trim();
     if (!search) return [];
+    const cacheKey = search.toLowerCase();
+    if (this.teamSearchCache.has(cacheKey)) return this.teamSearchCache.get(cacheKey) || [];
+    const persistentKey = `team-search:${cacheKey}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) {
+      this.teamSearchCache.set(cacheKey, persistent || []);
+      return persistent || [];
+    }
+    if (Date.now() < this.rateLimitedUntil) return [];
 
     try {
       const response = await this.initializeClient().get('/teams', {
         params: { search }
       });
-      return response.data.response || [];
+      const teams = response.data.response || [];
+      this.teamSearchCache.set(cacheKey, teams);
+      await this.setPersistentCache(persistentKey, teams);
+      return teams;
     } catch (error: any) {
+      if (error.response?.status === 429) {
+        this.rateLimitedUntil = Date.now() + 60_000;
+        console.warn('Football API rate limit reached while searching teams; skipping external team lookups for 60 seconds');
+        return [];
+      }
       console.error('Failed to search teams:', error.message);
       return [];
     }
@@ -148,6 +286,22 @@ class FootballAPIService {
       .replace(/[^a-z0-9]/g, '');
   }
 
+  private getTeamSearchAliases(name?: string, country?: string) {
+    const normalizedValues = [name, country].map(value => this.normalizeComparableName(String(value || '')));
+    const aliases: Record<string, string[]> = {
+      czechrepublic: ['Czechia', 'Czech Republic', 'Czech'],
+      czechia: ['Czechia', 'Czech Republic', 'Czech'],
+      ivorycoast: ['Ivory Coast', "Cote d'Ivoire", 'Côte d’Ivoire'],
+      drcongo: ['DR Congo', 'Congo DR', 'Democratic Republic of the Congo'],
+      democraticrepublicofthecongo: ['DR Congo', 'Congo DR', 'Democratic Republic of the Congo'],
+      usa: ['USA', 'United States', 'United States of America'],
+      southkorea: ['South Korea', 'Korea Republic'],
+      bosniaandherzegovina: ['Bosnia and Herzegovina', 'Bosnia Herzegovina']
+    };
+
+    return Array.from(new Set(normalizedValues.flatMap(value => aliases[value] || [])));
+  }
+
   async resolveTeamApiId(params: { name: string; country?: string; preferredId?: number; national?: boolean }) {
     const looksLikeLocalFallbackId = params.preferredId && ((params.preferredId >= 1000 && params.preferredId < 2000) || params.preferredId >= 9000);
     if (params.preferredId && params.preferredId > 0 && !looksLikeLocalFallbackId) {
@@ -155,7 +309,7 @@ class FootballAPIService {
     }
 
     const country = String(params.country || params.name || '').trim();
-    const searchTerms = Array.from(new Set([country, params.name].filter(Boolean)));
+    const searchTerms = Array.from(new Set([country, params.name, ...this.getTeamSearchAliases(params.name, country)].filter(Boolean)));
     const normalizedCountry = this.normalizeComparableName(country);
     const normalizedName = this.normalizeComparableName(params.name);
 
@@ -176,6 +330,7 @@ class FootballAPIService {
       }
     }
 
+    console.warn(`Could not resolve API team id for ${params.name}${params.country ? ` (${params.country})` : ''}`);
     return undefined;
   }
 
@@ -415,6 +570,11 @@ class FootballAPIService {
   }
 
   async getPopularTeams(teamCount: number, countries?: string[]) {
+    const normalizedCountries = (countries || []).map(country => String(country).trim()).filter(Boolean).sort();
+    const persistentKey = `popular-teams:${teamCount}:${normalizedCountries.join('|') || 'global'}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || [];
+
     const allTeams: any[] = [];
     const selectedCountries = this.normalizeCountries(countries);
 
@@ -446,13 +606,21 @@ class FootballAPIService {
         uniqueTeams.push(...randomTeams);
       }
 
-      return this.dedupeTeams(uniqueTeams)
+      const result = this.dedupeTeams(uniqueTeams)
         .sort((a: any, b: any) => (b.team.strength || 0) - (a.team.strength || 0))
         .slice(0, teamCount);
+      await this.setPersistentCache(persistentKey, result);
+      return result;
     } catch (error) {
       console.error('Failed to fetch popular teams:', error);
       return this.getRandomTeams(teamCount, countries);
     }
+  }
+
+  clearRuntimeCache() {
+    this.teamSearchCache.clear();
+    this.squadCache.clear();
+    this.rateLimitedUntil = 0;
   }
 
   // 获取随机球队（当API配额不足时的回退方案）

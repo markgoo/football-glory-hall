@@ -1,4 +1,6 @@
 import { DataSource } from 'typeorm';
+import * as path from 'path';
+import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
 import { Team } from '../models/Team';
 import { Tournament } from '../models/Tournament';
@@ -8,8 +10,7 @@ import { HistoricalRecord } from '../models/HistoricalRecord';
 import { LLMSetting } from '../models/LLMSetting';
 import { LLMPromptTemplate } from '../models/LLMPromptTemplate';
 import { AIMatchSession } from '../models/AIMatchSession';
-import * as path from 'path';
-import bcrypt from 'bcryptjs';
+import { FootballApiCache } from '../models/FootballApiCache';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -18,7 +19,7 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_PATH || path.join(__dirname, '../../data/database.sqlite'),
   synchronize: isDevelopment,
   logging: isDevelopment,
-  entities: [User, Team, Tournament, Match, MatchStatistics, HistoricalRecord, LLMSetting, LLMPromptTemplate, AIMatchSession],
+  entities: [User, Team, Tournament, Match, MatchStatistics, HistoricalRecord, LLMSetting, LLMPromptTemplate, AIMatchSession, FootballApiCache],
   migrations: [path.join(__dirname, '../migrations/**/*{.ts,.js}')],
   subscribers: [path.join(__dirname, '../subscribers/**/*{.ts,.js}')],
 });
@@ -37,24 +38,30 @@ export const initializeDatabase = async () => {
 
 const ensureDefaultLLMPrompts = async () => {
   const promptRepository = AppDataSource.getRepository(LLMPromptTemplate);
-  const defaults: Array<Pick<LLMPromptTemplate, 'key' | 'title' | 'content' | 'isActive'>> = [
+  const defaults: Array<Pick<LLMPromptTemplate, 'key' | 'title' | 'titleEn' | 'content' | 'contentEn' | 'isActive'>> = [
     {
       key: 'match_intro',
       title: 'AI 对决开场',
+      titleEn: 'AI Duel Intro',
       isActive: true,
-      content: '你是足球文字直播解说员。请用中文为这场比赛写一段简短开场，风格像广播解说，基于双方阵型、战术和实力。'
+      content: '你是足球文字直播解说员。请为这场比赛写一段简短开场，风格像广播解说，基于双方阵型、战术和实力。',
+      contentEn: 'You are a football live text commentator. Write a concise match intro in a radio commentary style, based on both teams, formations, tactics, and strength.'
     },
     {
       key: 'match_step',
       title: 'AI 对决推进',
+      titleEn: 'AI Duel Step',
       isActive: true,
-      content: '你是足球比赛模拟引擎。请严格返回 JSON，不要 Markdown。根据当前比分、时间、阵型、战术和历史事件，生成下一个时间片的足球比赛文字直播、关键事件和技术统计增量。'
+      content: '你是足球比赛模拟解说引擎。请严格返回 JSON，不要 Markdown。根据系统已经决定的事件，把下一段比赛润色成拟真的足球文字直播。',
+      contentEn: 'You are a football match simulation commentary engine. Return strict JSON only, no Markdown. Polish the system-decided events into realistic football live commentary.'
     },
     {
       key: 'match_summary',
       title: 'AI 对决总结',
+      titleEn: 'AI Duel Summary',
       isActive: true,
-      content: '你是足球赛后评论员。请根据整场事件、比分和技术统计，用中文写一段简短赛后总结。'
+      content: '你是足球赛后评论员。请根据整场事件、比分和技术统计，写一段简短赛后总结。',
+      contentEn: 'You are a football post-match analyst. Write a concise post-match summary based on the events, score, and statistics.'
     }
   ];
 
@@ -62,6 +69,10 @@ const ensureDefaultLLMPrompts = async () => {
     const existing = await promptRepository.findOne({ where: { key: item.key } });
     if (!existing) {
       await promptRepository.save(promptRepository.create(item));
+    } else if (!existing.titleEn || !existing.contentEn) {
+      existing.titleEn = existing.titleEn || item.titleEn;
+      existing.contentEn = existing.contentEn || item.contentEn;
+      await promptRepository.save(existing);
     }
   }
 };

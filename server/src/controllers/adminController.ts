@@ -1,8 +1,12 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import fs from 'fs/promises';
+import path from 'path';
 import { AppDataSource } from '../config/database';
+import { FootballApiCache } from '../models/FootballApiCache';
 import { User } from '../models/User';
 import { AuthRequest } from '../middleware/auth';
+import FootballAPIService from '../services/footballAPIService';
 
 const toSafeUser = (user: User) => ({
   id: user.id,
@@ -17,6 +21,50 @@ const toSafeUser = (user: User) => ({
 });
 
 export class AdminController {
+  static async getFootballCacheStats(req: Request, res: Response) {
+    try {
+      const cacheRepository = AppDataSource.getRepository(FootballApiCache);
+      const apiCacheCount = await cacheRepository.count();
+      const imageCacheDir = path.resolve(process.cwd(), 'data', 'image-cache');
+      let imageCacheFiles = 0;
+
+      try {
+        imageCacheFiles = (await fs.readdir(imageCacheDir)).length;
+      } catch {
+        imageCacheFiles = 0;
+      }
+
+      res.json({ apiCacheCount, imageCacheFiles });
+    } catch (error) {
+      console.error('Admin get football cache stats error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  static async clearFootballCache(req: Request, res: Response) {
+    try {
+      const cacheRepository = AppDataSource.getRepository(FootballApiCache);
+      const apiCacheCount = await cacheRepository.count();
+      await cacheRepository.clear();
+      FootballAPIService.clearRuntimeCache();
+
+      const imageCacheDir = path.resolve(process.cwd(), 'data', 'image-cache');
+      let imageCacheFiles = 0;
+      try {
+        const files = await fs.readdir(imageCacheDir);
+        imageCacheFiles = files.length;
+        await fs.rm(imageCacheDir, { recursive: true, force: true });
+      } catch {
+        imageCacheFiles = 0;
+      }
+
+      res.json({ message: 'Football cache cleared', apiCacheCount, imageCacheFiles });
+    } catch (error) {
+      console.error('Admin clear football cache error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
   static async getUsers(req: Request, res: Response) {
     try {
       const userRepository = AppDataSource.getRepository(User);

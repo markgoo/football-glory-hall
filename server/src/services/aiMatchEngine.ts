@@ -60,7 +60,10 @@ const lineupPlayer = (plan: any, fallback: string, attacking = true) => {
   const lineup: any[] = Array.isArray(plan?.lineup) ? plan.lineup : [];
   if (lineup.length === 0) return fallback;
   const candidates = attacking ? lineup.slice(7) : lineup.slice(0, 5);
-  return pick(candidates.length ? candidates : lineup)?.name || fallback;
+  const player = pick(candidates.length ? candidates : lineup);
+  if (!player?.name) return fallback;
+  const number = player.number ? `${player.number}号 ` : '';
+  return `${number}${player.name}`;
 };
 
 const tacticRisk = (plan: any) => {
@@ -199,7 +202,8 @@ export class AIMatchEngine {
         state.momentum[defendingSide] -= 0.8;
         events.push({ minute: minuteB, type: 'goal', team: attackingSide, key: true, player, text: `${player} 抓住关键机会完成破门。`, engine: true });
       } else if (selectedPendingEvent?.type === 'card') {
-        events.push({ minute: minuteB, type: 'card', team: attackingSide, key: true, text: `${attackingTeam?.name || '球队'} 在高强度对抗中吃到一张黄牌。`, engine: true });
+        const cardPlayer = lineupPlayer(attackingPlan, attackingTeam?.name || '犯规球员', false);
+        events.push({ minute: minuteB, type: 'card', team: attackingSide, key: true, player: cardPlayer, text: `${cardPlayer} 在高强度对抗中吃到一张黄牌。`, engine: true });
       } else if (selectedPendingEvent?.type === 'penalty') {
         events.push({ minute: minuteB, type: 'penalty', team: attackingSide, key: true, player: lineupPlayer(attackingPlan, attackingTeam?.name || '主罚手'), text: `${attackingTeam?.name || '进攻方'} 制造点球机会，裁判指向十二码点。`, engine: true });
       } else {

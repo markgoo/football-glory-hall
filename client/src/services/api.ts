@@ -95,6 +95,8 @@ export const adminAPI = {
   resetPassword: (id: string, password: string) =>
     api.post(`/admin/users/${id}/reset-password`, { password }),
   deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
+  getFootballCache: () => api.get<{ apiCacheCount: number; imageCacheFiles: number }>('/admin/football-cache'),
+  clearFootballCache: () => api.delete<{ message: string; apiCacheCount: number; imageCacheFiles: number }>('/admin/football-cache'),
 };
 
 export const llmAPI = {
@@ -105,9 +107,9 @@ export const llmAPI = {
   saveGlobalSettings: (data: { apiBaseUrl: string; apiKey?: string; model: string; voiceEnabled?: boolean; isGlobalEnabled?: boolean }) =>
     api.put('/llm/admin/global-settings', data),
   getPrompts: () => api.get('/llm/prompts'),
-  updatePrompt: (key: string, data: { title?: string; content?: string; isActive?: boolean }) =>
+  updatePrompt: (key: string, data: { title?: string; content?: string; isActive?: boolean; language?: 'zh' | 'en' }) =>
     api.patch(`/llm/prompts/${key}`, data),
-  createSession: (matchId: string, data: { durationMinutes: number }) =>
+  createSession: (matchId: string, data: { durationMinutes: number; language?: 'zh' | 'en' }) =>
     api.post(`/llm/matches/${matchId}/sessions`, data),
   stepSession: (sessionId: string) => api.post(`/llm/sessions/${sessionId}/step`),
   appendSessionEvent: (sessionId: string, data: { minute: number; type: string; team: string; text: string; player?: string; dice?: any }) =>

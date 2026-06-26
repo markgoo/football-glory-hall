@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -9,22 +10,20 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false }) => {
   const { user, loading } = useAuth();
-
-  console.log('ProtectedRoute check:', { loading, user: !!user, path: location.pathname });
+  const { t } = useI18n();
 
   if (loading) {
     return (
-      <div className="min-h-screen flex justify-center items-center">
+      <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">正在验证身份...</p>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+          <p className="text-gray-600">{t('route.verifying')}</p>
         </div>
       </div>
     );
   }
 
   if (!user) {
-    console.log('ProtectedRoute: No user, redirecting to /login');
     return <Navigate to="/login" replace />;
   }
 
@@ -32,7 +31,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin 
     return <Navigate to="/dashboard" replace />;
   }
 
-  console.log('ProtectedRoute: User authenticated, rendering children');
   return <>{children}</>;
 };
 

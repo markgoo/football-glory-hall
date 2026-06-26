@@ -54,6 +54,7 @@ const normalizeApiPlayerPosition = (position?: string) => {
 const transformApiPlayers = (players: any[]): TeamPlayer[] => (players || []).map((player, index) => ({
   id: player.id,
   name: player.name || `球员 ${index + 1}`,
+  nameEn: player.name || `Player ${index + 1}`,
   age: player.age,
   number: player.number || index + 1,
   position: normalizeApiPlayerPosition(player.position),
@@ -66,7 +67,58 @@ const normalizeSyncName = (value?: string) => String(value || '')
   .toLowerCase()
   .replace(/[^a-z0-9]/g, '');
 
+const syncNameAlias = (value?: string) => {
+  const normalized = normalizeSyncName(value);
+  const aliases: Record<string, string> = {
+    czechia: 'czechrepublic',
+    czech: 'czechrepublic',
+    usa: 'unitedstates',
+    unitedstatesofamerica: 'unitedstates',
+    korearepublic: 'southkorea',
+    ivorycoast: 'cotedivoire',
+    drcongo: 'democraticrepublicofthecongo',
+    congodr: 'democraticrepublicofthecongo',
+    bosniaherzegovina: 'bosniaandherzegovina'
+  };
+  return aliases[normalized] || normalized;
+};
+
 const completedFixtureStatus = new Set(['FT', 'AET', 'PEN']);
+
+const parseRealScorerEvents = (value: any, teamSide: 'home' | 'away', teamName: string) => {
+  if (!value || value === 'null') return [];
+  const items = Array.isArray(value) ? value : String(value).split(/[,;，；]/);
+  return items.map((item: any) => {
+    const text = typeof item === 'string' ? item : item?.name || item?.player || '';
+    if (!text) return undefined;
+    const minuteMatch = String(text).match(/(\d{1,3})(?:\+\d+)?['’]?/);
+    const minute = minuteMatch ? Number(minuteMatch[1]) : 90;
+    const player = String(text)
+      .replace(/\(?\d{1,3}(?:\+\d+)?['’]?\)?/g, '')
+      .replace(/[{}[\]"“”]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return {
+      minute,
+      type: 'goal',
+      team: teamSide,
+      player,
+      description: `${teamName} goal: ${player || 'Unknown player'}`,
+      descriptionZh: `${teamName} 进球：${player || '未知球员'}`
+    };
+  }).filter(Boolean);
+};
+
+const buildFallbackRealLineup = (team: Team) => ({
+  teamName: team.name,
+  source: team.playerSource || 'generated',
+  players: team.playerSource === 'api-football' ? (team.players || []).slice(0, 11).map((player, index) => ({
+    number: player.number || index + 1,
+    name: player.name,
+    nameEn: player.name,
+    position: player.position || '球员'
+  })) : []
+});
 
 const FIFA_WORLD_CUP_2026_BRACKET_SLOTS: Record<string, { homeSlot: string; awaySlot: string }> = {
   'R32-1': { homeSlot: '2A', awaySlot: '2B' },
@@ -871,38 +923,100 @@ export class TournamentController {
         return res.status(400).json({ error: '已有比赛开始或结束，不能再同步真实比分' });
       }
 
-      const fixtures = tournament.realTournamentTemplate === 'fifa_world_cup_2026'
-        ? await FootballAPIService.getFixturesByLeagueSeason(1, 2026)
-        : [];
-      const completedFixtures = fixtures.filter((item: any) => completedFixtureStatus.has(String(item.fixture?.status?.short || '')));
+      const fixtureSource = tournament.realTournamentTemplate === 'fifa_world_cup_2026'
+        ? await FootballAPIService.getWorldCupFixtures(2026)
+        : { fixtures: [], leagueId: undefined, leagueName: undefined };
+      let provider = 'api-football';
+      let rawFixtures = fixtureSource.fixtures;
+      let normalizedFixtures = rawFixtures.map((item: any) => ({
+        homeName: item.teams?.home?.name,
+        awayName: item.teams?.away?.name,
+        homeScore: item.goals?.home,
+        awayScore: item.goals?.away,
+        homePenaltyScore: item.score?.penalty?.home,
+        awayPenaltyScore: item.score?.penalty?.away,
+        raw: item,
+        date: item.fixture?.date,
+        status: item.fixture?.status?.short
+      }));
+
+      if (normalizedFixtures.length === 0 && tournament.realTournamentTemplate === 'fifa_world_cup_2026') {
+        provider = 'worldcup26.ir';
+        rawFixtures = await FootballAPIService.getWorldCup26OpenGames();
+        normalizedFixtures = rawFixtures.map((item: any) => ({
+          homeName: item.home_team_name_en,
+          awayName: item.away_team_name_en,
+          homeScore: item.home_score,
+          awayScore: item.away_score,
+          homePenaltyScore: undefined,
+          awayPenaltyScore: undefined,
+          homeScorers: item.home_scorers,
+          awayScorers: item.away_scorers,
+          raw: item,
+          date: item.local_date,
+          status: String(item.finished).toUpperCase() === 'TRUE' ? 'FT' : String(item.time_elapsed || '')
+        }));
+      }
+
+      const completedFixtures = normalizedFixtures.filter((item: any) => {
+        const status = String(item.fixture?.status?.short || '');
+        const normalizedStatus = String(item.status || status || '');
+        const hasScore = item.homeScore !== null && item.awayScore !== null && item.homeScore !== undefined && item.awayScore !== undefined;
+        const alreadyStarted = item.date ? new Date(item.date).getTime() <= Date.now() : false;
+        return completedFixtureStatus.has(normalizedStatus) || (hasScore && alreadyStarted && normalizedStatus !== 'notstarted');
+      });
       let updatedCount = 0;
+      const unmatchedMatches: string[] = [];
 
       for (const match of tournament.matches || []) {
         if (!match.homeTeam || !match.awayTeam) continue;
-        const localHome = normalizeSyncName(match.homeTeam.country || match.homeTeam.name);
-        const localAway = normalizeSyncName(match.awayTeam.country || match.awayTeam.name);
+        const localHome = syncNameAlias(match.homeTeam.country || match.homeTeam.name);
+        const localAway = syncNameAlias(match.awayTeam.country || match.awayTeam.name);
+        let reversed = false;
         const fixture = completedFixtures.find((item: any) => {
-          const fixtureHome = normalizeSyncName(item.teams?.home?.name);
-          const fixtureAway = normalizeSyncName(item.teams?.away?.name);
-          return fixtureHome === localHome && fixtureAway === localAway;
+          const fixtureHome = syncNameAlias(item.homeName);
+          const fixtureAway = syncNameAlias(item.awayName);
+          if (fixtureHome === localHome && fixtureAway === localAway) return true;
+          if (fixtureHome === localAway && fixtureAway === localHome) {
+            reversed = true;
+            return true;
+          }
+          return false;
         });
-        if (!fixture) continue;
+        if (!fixture) {
+          unmatchedMatches.push(`${match.homeTeam.name} vs ${match.awayTeam.name}`);
+          continue;
+        }
 
-        match.homeScore = Number(fixture.goals?.home ?? 0);
-        match.awayScore = Number(fixture.goals?.away ?? 0);
+        match.homeScore = Number(reversed ? fixture.awayScore ?? 0 : fixture.homeScore ?? 0);
+        match.awayScore = Number(reversed ? fixture.homeScore ?? 0 : fixture.awayScore ?? 0);
         match.status = 'completed';
         match.resultMode = 'auto';
         match.commentary = '已同步真实比赛结果';
-        match.events = [{
+        (match as any).commentaryEn = 'Real match result synced';
+        const homeGoalEvents = parseRealScorerEvents(reversed ? fixture.awayScorers : fixture.homeScorers, 'home', match.homeTeam.name);
+        const awayGoalEvents = parseRealScorerEvents(reversed ? fixture.homeScorers : fixture.awayScorers, 'away', match.awayTeam.name);
+        const realEvents = [...homeGoalEvents, ...awayGoalEvents].sort((a: any, b: any) => a.minute - b.minute);
+        match.events = realEvents.length > 0 ? realEvents as any : [{
           minute: 90,
           type: 'goal',
           team: 'neutral',
           player: '',
-          description: `真实比分：${match.homeTeam.name} ${match.homeScore} - ${match.awayScore} ${match.awayTeam.name}`
+          description: `Real score: ${match.homeTeam.country || match.homeTeam.name} ${match.homeScore} - ${match.awayScore} ${match.awayTeam.country || match.awayTeam.name}`,
+          descriptionZh: `真实比分：${match.homeTeam.name} ${match.homeScore} - ${match.awayScore} ${match.awayTeam.name}`
         }] as any;
-        if (fixture.score?.penalty?.home !== null && fixture.score?.penalty?.away !== null) {
-          match.homePenaltyScore = Number(fixture.score.penalty.home);
-          match.awayPenaltyScore = Number(fixture.score.penalty.away);
+        match.manualDetails = {
+          source: 'real_sync',
+          provider,
+          fixture: fixture.raw,
+          realLineups: {
+            home: buildFallbackRealLineup(match.homeTeam),
+            away: buildFallbackRealLineup(match.awayTeam)
+          }
+        };
+        if (fixture.homePenaltyScore !== null && fixture.awayPenaltyScore !== null && fixture.homePenaltyScore !== undefined && fixture.awayPenaltyScore !== undefined) {
+          match.homePenaltyScore = Number(reversed ? fixture.awayPenaltyScore : fixture.homePenaltyScore);
+          match.awayPenaltyScore = Number(reversed ? fixture.homePenaltyScore : fixture.awayPenaltyScore);
         }
         updatedCount += 1;
       }
@@ -912,7 +1026,17 @@ export class TournamentController {
         where: { id: tournament.id },
         relations: ['teams', 'matches', 'matches.homeTeam', 'matches.awayTeam', 'matches.statistics']
       });
-      res.json({ updatedCount, tournament: refreshed });
+      res.json({
+        updatedCount,
+        fixtureCount: normalizedFixtures.length,
+        completedFixtureCount: completedFixtures.length,
+        provider,
+        leagueId: fixtureSource.leagueId,
+        leagueName: fixtureSource.leagueName,
+        searchedLeagueIds: (fixtureSource as any).searchedLeagueIds,
+        unmatchedMatches: unmatchedMatches.slice(0, 12),
+        tournament: refreshed
+      });
     } catch (error) {
       console.error('Sync real tournament results error:', error);
       res.status(500).json({ error: 'Internal server error' });

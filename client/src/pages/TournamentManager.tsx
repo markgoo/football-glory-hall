@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Eye, Play, Plus, Trash2, Trophy } from 'lucide-react';
 import { useTournaments } from '../contexts/TournamentContext';
+import { useI18n } from '../contexts/I18nContext';
 import { tournamentAPI } from '../services/api';
 import { TeamCandidate, Tournament } from '../types';
 import { TeamNameWithFlag } from '../utils/flags';
@@ -89,16 +90,6 @@ const countryOptions = [
   { value: 'Australia', label: '澳大利亚' }
 ];
 
-const countryLabelMap = countryOptions.reduce<Record<string, string>>((labels, country) => {
-  labels[country.value] = country.label;
-  return labels;
-}, {});
-
-const formatCountrySelection = (countries?: string[]) => {
-  if (!countries || countries.length === 0) return '全球不限';
-  return countries.map(country => countryLabelMap[country] || country).join('、');
-};
-
 const countryRegions: Record<string, string> = {
   England: 'europe',
   Spain: 'europe',
@@ -158,6 +149,7 @@ const countryPresets = [
 ];
 
 const TournamentManager: React.FC = () => {
+  const { language, t } = useI18n();
   const { tournaments, loading, error, createTournament, deleteTournament, startTournament } = useTournaments();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState<TournamentForm>(defaultForm);
@@ -192,9 +184,44 @@ const TournamentManager: React.FC = () => {
   const activeCountryGroups = formData.teamCategory === 'national'
     ? [{ value: 'un', label: 'UN 国家与观察员', countries: activeCountryOptions }]
     : countryGroups;
+  const translateCountryLabel = (country: { value: string; label: string }) => language === 'en' ? country.value : country.label;
+  const translateGroupLabel = (label: string) => {
+    if (language === 'zh') return label;
+    const map: Record<string, string> = {
+      '欧洲': 'Europe',
+      '南美洲': 'South America',
+      '北美洲': 'North America',
+      '亚洲': 'Asia',
+      '大洋洲': 'Oceania',
+      'UN 国家与观察员': 'UN Members and Observers'
+    };
+    return map[label] || label;
+  };
+  const translatePresetLabel = (label: string) => {
+    if (language === 'zh') return label;
+    const map: Record<string, string> = {
+      '五大联赛': 'Top 5 Leagues',
+      '欧洲主流': 'Mainstream Europe',
+      '欧美强队': 'Europe & Americas',
+      '亚洲邀请赛': 'Asian Invitational',
+      '南美解放者': 'South America',
+      '全球混合': 'Global Mix'
+    };
+    return map[label] || label;
+  };
   const formatActiveCountrySelection = (countries?: string[]) => {
-    if (!countries || countries.length === 0) return '全球不限';
-    return countries.map(country => activeCountryLabelMap[country] || country).join('、');
+    if (!countries || countries.length === 0) return t('tournament.form.global');
+    return countries.map(country => language === 'en' ? country : activeCountryLabelMap[country] || country).join(language === 'en' ? ', ' : '、');
+  };
+  const formatTournamentCountrySelection = (countries?: string[]) => {
+    if (!countries || countries.length === 0) return t('tournament.form.global');
+    return countries.map(country => language === 'en' ? country : getCountryNameZh(country)).join(language === 'en' ? ', ' : '、');
+  };
+  const getLuckyCountryName = (country: string) => language === 'en' ? country : getCountryNameZh(country);
+  const getTournamentTypeLabel = (type: string) => {
+    if (type === 'knockout') return t('tournament.form.type.knockout');
+    if (type === 'league') return t('tournament.form.type.league');
+    return t('tournament.form.type.groupKnockout');
   };
 
   const autoSelectTeams = (pool: TeamCandidate[] = teamPool) => {
@@ -221,7 +248,7 @@ const TournamentManager: React.FC = () => {
       setCreateStep(2);
       autoSelectTeams(response.data);
     } catch (err: any) {
-      alert(err.response?.data?.error || err.message || '加载球队失败');
+      alert(err.response?.data?.error || err.message || t('tournament.error.loadTeams'));
     } finally {
       setLoadingTeamPool(false);
     }
@@ -232,7 +259,7 @@ const TournamentManager: React.FC = () => {
 
     const selectedTeams = getSelectedTeams();
     if (selectedTeams.length !== formData.teamCount) {
-      alert(`请选择 ${formData.teamCount} 支球队`);
+      alert(t('tournament.error.selectTeams', { count: formData.teamCount }));
       return;
     }
 
@@ -251,7 +278,7 @@ const TournamentManager: React.FC = () => {
 
       closeCreateDialog();
     } catch (err: any) {
-      alert(err.message || '创建杯赛失败');
+      alert(err.message || t('tournament.error.createFailed'));
     }
   };
 
@@ -259,8 +286,8 @@ const TournamentManager: React.FC = () => {
     try {
       setCreatingWorldCup(true);
       await createTournament({
-        name: '2026 美加墨世界杯',
-        description: '按 2026 FIFA World Cup 官方分组、赛程与淘汰赛骨架创建。',
+        name: t('tournament.worldCupName'),
+        description: t('tournament.worldCupDescription'),
         type: 'group_knockout',
         teamCategory: 'national',
         realTournamentTemplate: 'fifa_world_cup_2026',
@@ -272,7 +299,7 @@ const TournamentManager: React.FC = () => {
       setShowWorldCupDialog(false);
       setLuckyWinner(null);
     } catch (err: any) {
-      alert(err.message || '创建 2026 美加墨世界杯失败');
+      alert(err.message || t('tournament.error.createWorldCupFailed'));
     } finally {
       setCreatingWorldCup(false);
     }
@@ -342,12 +369,12 @@ const TournamentManager: React.FC = () => {
   };
 
   const handleDeleteTournament = async (id: string) => {
-    if (!window.confirm('确定删除这个杯赛吗？')) return;
+    if (!window.confirm(t('tournament.deleteConfirm'))) return;
 
     try {
       await deleteTournament(id);
     } catch (err: any) {
-      alert(err.message || '删除杯赛失败');
+      alert(err.message || t('tournament.error.deleteFailed'));
     }
   };
 
@@ -355,7 +382,7 @@ const TournamentManager: React.FC = () => {
     try {
       await startTournament(id);
     } catch (err: any) {
-      alert(err.message || '开始杯赛失败');
+      alert(err.message || t('tournament.error.startFailed'));
     }
   };
 
@@ -368,45 +395,45 @@ const TournamentManager: React.FC = () => {
       )}
 
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">杯赛管理</h1>
+        <h1 className="text-3xl font-bold text-gray-900">{t('tournament.title')}</h1>
         <button
           onClick={() => setShowCreateForm(true)}
           className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
         >
           <Plus className="w-5 h-5 mr-2" />
-          创建新杯赛
+          {t('tournament.createNew')}
         </button>
       </div>
 
       <div className="flex flex-wrap gap-2 mb-6">
-        <button onClick={() => setShowWorldCupDialog(true)} disabled={creatingWorldCup} className="flex items-center bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50"><Trophy className="w-5 h-5 mr-2" />一键26美加墨</button>
+        <button onClick={() => setShowWorldCupDialog(true)} disabled={creatingWorldCup} className="flex items-center bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50"><Trophy className="w-5 h-5 mr-2" />{t('tournament.oneClickWorldCup')}</button>
       </div>
 
       {showWorldCupDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900">创建 2026 美加墨世界杯</h2>
-              <button type="button" onClick={() => setShowWorldCupDialog(false)} className="text-gray-500 hover:text-gray-700">关闭</button>
+              <h2 className="text-xl font-bold text-gray-900">{t('tournament.createWorldCupTitle')}</h2>
+              <button type="button" onClick={() => setShowWorldCupDialog(false)} className="text-gray-500 hover:text-gray-700">{t('common.close')}</button>
             </div>
             <div className="rounded-lg border bg-emerald-50 p-4 mb-4">
-              <div className="font-semibold text-gray-900">真实比赛模板</div>
-              <p className="text-sm text-gray-700 mt-1">将创建 48 支国家队、12 个小组、官方小组赛时间/场馆，以及 32 强到决赛的预设骨架。</p>
+              <div className="font-semibold text-gray-900">{t('tournament.worldCupTemplate')}</div>
+              <p className="text-sm text-gray-700 mt-1">{t('tournament.createWorldCupDesc')}</p>
               <button type="button" onClick={() => createWorldCup2026()} disabled={creatingWorldCup || luckyRolling} className="mt-3 bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50">
-                {creatingWorldCup ? '创建中...' : '确认创建原版世界杯'}
+                {creatingWorldCup ? t('tournament.creating') : t('tournament.confirmOriginalWorldCup')}
               </button>
             </div>
-            <h3 className="font-semibold text-gray-900 mb-2">随机幸运儿</h3>
+            <h3 className="font-semibold text-gray-900 mb-2">{t('tournament.luckyTitle')}</h3>
             <div className="border rounded-lg bg-gray-50 p-6 text-center">
               <div className={`mx-auto mb-4 min-h-[80px] flex items-center justify-center rounded border bg-white ${luckyRolling ? 'animate-pulse' : ''}`}>
-                <TeamNameWithFlag team={{ name: getCountryNameZh(luckyCurrent), country: luckyCurrent, logo: null } as any} flagClassName="w-12 h-8 flex-shrink-0" />
+                <TeamNameWithFlag team={{ name: getLuckyCountryName(luckyCurrent), country: luckyCurrent, logo: null } as any} flagClassName="w-12 h-8 flex-shrink-0" />
               </div>
-              <div className="text-2xl font-bold text-gray-900">{getCountryNameZh(luckyWinner || luckyCurrent)}</div>
-              <p className="mt-2 text-sm text-gray-600">最终选中的球队会被中国队替代，赛程位置保持不变。</p>
+              <div className="text-2xl font-bold text-gray-900">{getLuckyCountryName(luckyWinner || luckyCurrent)}</div>
+              <p className="mt-2 text-sm text-gray-600">{t('tournament.luckyDescription')}</p>
             </div>
             <div className="mt-4 flex gap-2">
-              <button type="button" onClick={startLuckyDraw} disabled={luckyRolling || creatingWorldCup} className="flex-1 bg-amber-600 text-white py-2 rounded hover:bg-amber-700 disabled:opacity-50">{luckyRolling ? '滚动中...' : '开始抽取随机幸运儿'}</button>
-              <button type="button" onClick={() => luckyWinner && createWorldCup2026(luckyWinner)} disabled={!luckyWinner || luckyRolling || creatingWorldCup} className="flex-1 bg-emerald-600 text-white py-2 rounded hover:bg-emerald-700 disabled:opacity-50">创建世界杯</button>
+              <button type="button" onClick={startLuckyDraw} disabled={luckyRolling || creatingWorldCup} className="flex-1 bg-amber-600 text-white py-2 rounded hover:bg-amber-700 disabled:opacity-50">{luckyRolling ? t('tournament.rolling') : t('tournament.startLuckyDraw')}</button>
+              <button type="button" onClick={() => luckyWinner && createWorldCup2026(luckyWinner)} disabled={!luckyWinner || luckyRolling || creatingWorldCup} className="flex-1 bg-emerald-600 text-white py-2 rounded hover:bg-emerald-700 disabled:opacity-50">{t('tournament.createWorldCup')}</button>
             </div>
           </div>
         </div>
@@ -416,8 +443,8 @@ const TournamentManager: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">创建新杯赛</h2>
-              <div className="text-sm text-gray-500">第 {createStep} / 2 步</div>
+              <h2 className="text-xl font-bold">{t('tournament.form.title')}</h2>
+              <div className="text-sm text-gray-500">{t('tournament.form.step', { step: createStep })}</div>
             </div>
 
             <form onSubmit={createStep === 1 ? handleLoadTeamPool : handleCreateTournament}>
@@ -429,22 +456,22 @@ const TournamentManager: React.FC = () => {
                       onClick={() => setFormData({ ...formData, teamCategory: 'club', teamCountries: [] })}
                       className={`rounded-lg border p-4 text-left transition ${formData.teamCategory === 'club' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}
                     >
-                      <div className="text-lg font-semibold text-gray-900">俱乐部杯赛</div>
-                      <div className="text-sm text-gray-600 mt-1">使用各大联赛俱乐部，显示国旗和队徽。</div>
+                      <div className="text-lg font-semibold text-gray-900">{t('tournament.form.club')}</div>
+                      <div className="text-sm text-gray-600 mt-1">{t('tournament.form.clubDesc')}</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, teamCategory: 'national', teamCountries: [] })}
                       className={`rounded-lg border p-4 text-left transition ${formData.teamCategory === 'national' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}
                     >
-                      <div className="text-lg font-semibold text-gray-900">国家队杯赛</div>
-                      <div className="text-sm text-gray-600 mt-1">使用国家队，只显示国旗，不显示球队队徽。</div>
+                      <div className="text-lg font-semibold text-gray-900">{t('tournament.form.national')}</div>
+                      <div className="text-sm text-gray-600 mt-1">{t('tournament.form.nationalDesc')}</div>
                     </button>
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">杯赛名称</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('tournament.form.name')}</label>
                       <input
                         type="text"
                         value={formData.name}
@@ -454,21 +481,21 @@ const TournamentManager: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">杯赛类型</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('tournament.form.type')}</label>
                       <select
                         value={formData.type}
                         onChange={(event) => setFormData({ ...formData, type: event.target.value as TournamentForm['type'] })}
                         className="input w-full"
                       >
-                        <option value="knockout">淘汰赛</option>
-                        <option value="league">联赛</option>
-                        <option value="group_knockout">小组赛 + 淘汰赛</option>
+                        <option value="knockout">{t('tournament.form.type.knockout')}</option>
+                        <option value="league">{t('tournament.form.type.league')}</option>
+                        <option value="group_knockout">{t('tournament.form.type.groupKnockout')}</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">描述</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('tournament.form.description')}</label>
                     <textarea
                       value={formData.description}
                       onChange={(event) => setFormData({ ...formData, description: event.target.value })}
@@ -479,7 +506,7 @@ const TournamentManager: React.FC = () => {
                   </div>
 
                   <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">开始时间</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('tournament.form.startTime')}</label>
                     <input
                       type="datetime-local"
                       value={formData.startTime}
@@ -487,57 +514,57 @@ const TournamentManager: React.FC = () => {
                       className="input w-full"
                       required
                     />
-                    <p className="text-xs text-gray-500 mt-1">每轮比赛会从这个时间开始自动排期，同一轮比赛每场间隔 2 小时。</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('tournament.form.startTimeHelp')}</p>
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-4 mt-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">球队数量</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('tournament.form.teamCount')}</label>
                       <select
                         value={formData.teamCount}
                         onChange={(event) => setFormData({ ...formData, teamCount: parseInt(event.target.value, 10) })}
                         className="input w-full"
                       >
-                        <option value="8">8 支球队</option>
-                        <option value="16">16 支球队</option>
-                        <option value="32">32 支球队</option>
-                        <option value="64">64 支球队</option>
-                        <option value="128">128 支球队</option>
+                        <option value="8">{t('tournament.form.teamsCount', { count: 8 })}</option>
+                        <option value="16">{t('tournament.form.teamsCount', { count: 16 })}</option>
+                        <option value="32">{t('tournament.form.teamsCount', { count: 32 })}</option>
+                        <option value="64">{t('tournament.form.teamsCount', { count: 64 })}</option>
+                        <option value="128">{t('tournament.form.teamsCount', { count: 128 })}</option>
                       </select>
                     </div>
 
                     {formData.type === 'group_knockout' && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">每组球队数</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{t('tournament.form.groupSize')}</label>
                         <select
                           value={formData.groupSize}
                           onChange={(event) => setFormData({ ...formData, groupSize: parseInt(event.target.value, 10) })}
                           className="input w-full"
                         >
-                          <option value="2">每组 2 队</option>
-                          <option value="4">每组 4 队</option>
-                          <option value="8">每组 8 队</option>
+                          <option value="2">{t('tournament.form.groupTeams', { count: 2 })}</option>
+                          <option value="4">{t('tournament.form.groupTeams', { count: 4 })}</option>
+                          <option value="8">{t('tournament.form.groupTeams', { count: 8 })}</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">将生成 {formData.teamCount / formData.groupSize} 个小组。</p>
+                        <p className="text-xs text-gray-500 mt-1">{t('tournament.form.groupHelp', { count: formData.teamCount / formData.groupSize })}</p>
                       </div>
                     )}
                   </div>
 
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-gray-700">球队国家</label>
+                      <label className="block text-sm font-medium text-gray-700">{t('tournament.form.countries')}</label>
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, teamCountries: [] })}
                         className="text-xs text-blue-600 hover:text-blue-800"
                       >
-                        全球不限
+                        {t('tournament.form.global')}
                       </button>
                     </div>
 
                     <div className="border rounded-lg p-3 space-y-4">
                       <div>
-                        <div className="text-xs font-medium text-gray-500 mb-2">建议方案</div>
+                        <div className="text-xs font-medium text-gray-500 mb-2">{t('tournament.form.presets')}</div>
                         <div className="flex flex-wrap gap-2">
                           {countryPresets.map(preset => (
                             <button
@@ -546,7 +573,7 @@ const TournamentManager: React.FC = () => {
                               onClick={() => applyCountryPreset(preset.countries)}
                               className="px-3 py-1.5 rounded border text-sm text-gray-700 hover:bg-blue-50 hover:border-blue-300"
                             >
-                              {preset.label}
+                              {translatePresetLabel(preset.label)}
                             </button>
                           ))}
                         </div>
@@ -561,7 +588,7 @@ const TournamentManager: React.FC = () => {
                             <div key={group.value} className="border rounded p-3">
                               <div className="flex items-center justify-between mb-2">
                                 <div>
-                                  <div className="font-medium text-gray-900">{group.label}</div>
+                                  <div className="font-medium text-gray-900">{translateGroupLabel(group.label)}</div>
                                   <div className="text-xs text-gray-500">{selectedCount} / {groupCountries.length}</div>
                                 </div>
                                 <button
@@ -569,7 +596,7 @@ const TournamentManager: React.FC = () => {
                                   onClick={() => toggleCountryRegion(groupCountries)}
                                   className="text-xs text-blue-600 hover:text-blue-800"
                                 >
-                                  {selectedCount === groupCountries.length ? '清空本区' : '选择本区'}
+                                  {selectedCount === groupCountries.length ? t('tournament.form.clearRegion') : t('tournament.form.selectRegion')}
                                 </button>
                               </div>
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -580,7 +607,7 @@ const TournamentManager: React.FC = () => {
                                       checked={formData.teamCountries.includes(country.value)}
                                       onChange={() => toggleTeamCountry(country.value)}
                                     />
-                                    {country.label}
+                                    {translateCountryLabel(country)}
                                   </label>
                                 ))}
                               </div>
@@ -589,7 +616,7 @@ const TournamentManager: React.FC = () => {
                         })}
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">当前：{formatActiveCountrySelection(formData.teamCountries)}</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('tournament.form.current', { value: formatActiveCountrySelection(formData.teamCountries) })}</p>
                   </div>
                 </>
               )}
@@ -598,26 +625,26 @@ const TournamentManager: React.FC = () => {
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">选择球队</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">{t('tournament.form.selectTeams')}</h3>
                       <p className="text-sm text-gray-600">
-                        已选择 {selectedTeamIds.length} / {formData.teamCount} 支球队，范围：{formatActiveCountrySelection(formData.teamCountries)}
+                        {t('tournament.form.selectedTeams', { selected: selectedTeamIds.length, total: formData.teamCount, range: formatActiveCountrySelection(formData.teamCountries) })}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={() => autoSelectTeams()} className="px-3 py-2 rounded bg-blue-100 text-blue-700 text-sm hover:bg-blue-200">
-                        按实力自动选择
+                        {t('tournament.form.autoSelect')}
                       </button>
                       <button type="button" onClick={() => setSelectedTeamIds([])} className="px-3 py-2 rounded bg-gray-100 text-gray-700 text-sm hover:bg-gray-200">
-                        清空
+                        {t('tournament.form.clear')}
                       </button>
                       <button type="button" onClick={() => setCreateStep(1)} className="px-3 py-2 rounded border text-gray-700 text-sm hover:bg-gray-50">
-                        上一步
+                        {t('tournament.form.previous')}
                       </button>
                     </div>
                   </div>
                   {!hasEnoughTeamPool && (
                     <div className="mb-3 rounded border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
-                      当前国家范围只找到 {teamPool.length} 支真实候选球队，不足 {formData.teamCount} 支。请返回上一步增加国家范围或减少球队数量。
+                      {t('tournament.form.notEnoughTeams', { found: teamPool.length, required: formData.teamCount })}
                     </div>
                   )}
 
@@ -656,14 +683,14 @@ const TournamentManager: React.FC = () => {
 
               <div className="flex space-x-4 mt-5">
                 <button type="submit" disabled={loadingTeamPool || (createStep === 2 && !hasEnoughTeamPool)} className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">
-                  {createStep === 1 ? (loadingTeamPool ? '加载球队中...' : '下一步：选择球队') : '创建杯赛'}
+                  {createStep === 1 ? (loadingTeamPool ? t('tournament.form.loadingTeams') : t('tournament.form.nextTeams')) : t('tournament.form.create')}
                 </button>
                 <button
                   type="button"
                   onClick={closeCreateDialog}
                   className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
               </div>
             </form>
@@ -693,31 +720,31 @@ const TournamentManager: React.FC = () => {
                     ? 'bg-green-100 text-green-800'
                     : 'bg-yellow-100 text-yellow-800'
                 }`}>
-                  {fullyCompleted ? '全部结束' : tournament.status === 'active' ? '进行中' : '草稿'}
+                  {fullyCompleted ? t('tournament.status.completedAll') : tournament.status === 'active' ? t('tournament.status.active') : t('tournament.status.draft')}
                 </span>
               </div>
 
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">类型:</span>
-                  <span>{tournament.type === 'knockout' ? '淘汰赛' : tournament.type === 'league' ? '联赛' : '小组赛 + 淘汰赛'}</span>
+                  <span className="text-gray-600">{t('tournament.card.type')}</span>
+                  <span>{getTournamentTypeLabel(tournament.type)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">球队数量:</span>
+                  <span className="text-gray-600">{t('tournament.card.teamCount')}</span>
                   <span>{tournament.teamCount}</span>
                 </div>
                 <div className="flex justify-between text-sm gap-3">
-                  <span className="text-gray-600">球队国家:</span>
-                  <span className="text-right">{formatCountrySelection(tournament.teamCountries)}</span>
+                  <span className="text-gray-600">{t('tournament.card.countries')}</span>
+                  <span className="text-right">{formatTournamentCountrySelection(tournament.teamCountries)}</span>
                 </div>
                 {tournament.type === 'group_knockout' && tournament.groupSize && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">分组:</span>
-                    <span>{tournament.teamCount / tournament.groupSize} 组，每组 {tournament.groupSize} 队</span>
+                    <span className="text-gray-600">{t('tournament.card.groups')}</span>
+                    <span>{t('tournament.form.groupSummary', { groups: tournament.teamCount / tournament.groupSize, size: tournament.groupSize })}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">创建时间:</span>
+                  <span className="text-gray-600">{t('tournament.createdAt')}</span>
                   <span>{new Date(tournament.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
@@ -728,7 +755,7 @@ const TournamentManager: React.FC = () => {
                   className="flex-1 bg-blue-100 text-blue-700 py-2 px-3 rounded text-sm hover:bg-blue-200 flex items-center justify-center"
                 >
                   <Eye className="w-4 h-4 mr-1" />
-                  查看
+                  {t('tournament.detail')}
                 </Link>
                 {tournament.status === 'draft' && (
                   <button
@@ -736,7 +763,7 @@ const TournamentManager: React.FC = () => {
                     className="flex-1 bg-green-100 text-green-700 py-2 px-3 rounded text-sm hover:bg-green-200 flex items-center justify-center"
                   >
                     <Play className="w-4 h-4 mr-1" />
-                    开始
+                    {t('tournament.start')}
                   </button>
                 )}
                 <button
@@ -752,13 +779,13 @@ const TournamentManager: React.FC = () => {
           {tournaments.length === 0 && (
             <div className="col-span-full text-center py-12">
               <Trophy className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">暂无杯赛</h3>
-              <p className="text-gray-600 mb-4">开始创建你的第一个杯赛。</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">{t('tournament.emptyTitle')}</h3>
+              <p className="text-gray-600 mb-4">{t('tournament.emptyText')}</p>
               <button
                 onClick={() => setShowCreateForm(true)}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
               >
-                创建杯赛
+                {t('tournament.form.create')}
               </button>
             </div>
           )}

@@ -12,6 +12,8 @@ export interface TeamStats {
 export interface TeamPlayer {
   id?: number | string;
   name: string;
+  nameEn?: string;
+  nameZh?: string;
   age?: number;
   number?: number;
   position?: string;

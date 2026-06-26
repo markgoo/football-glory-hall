@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { llmAPI } from '../services/api';
+import { useI18n } from '../contexts/I18nContext';
+import { adminAPI, llmAPI } from '../services/api';
 
-type Prompt = { id: string; key: string; title: string; content: string; isActive: boolean };
+type Prompt = { id: string; key: string; title: string; titleEn?: string; content: string; contentEn?: string; isActive: boolean };
 type GlobalSetting = { apiBaseUrl: string; model: string; voiceEnabled: boolean; isGlobalEnabled: boolean; hasApiKey: boolean };
+type PromptLanguage = 'zh' | 'en';
 
 const AdminLLM: React.FC = () => {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -10,10 +12,15 @@ const AdminLLM: React.FC = () => {
   const [globalApiKey, setGlobalApiKey] = useState('');
   const [savingGlobal, setSavingGlobal] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [promptLanguage, setPromptLanguage] = useState<PromptLanguage>('zh');
+  const [cacheStats, setCacheStats] = useState<{ apiCacheCount: number; imageCacheFiles: number } | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
+  const { t } = useI18n();
 
   const load = async () => {
-    const [promptsResponse, globalResponse] = await Promise.all([llmAPI.getPrompts(), llmAPI.getGlobalSettings()]);
+    const [promptsResponse, globalResponse, cacheResponse] = await Promise.all([llmAPI.getPrompts(), llmAPI.getGlobalSettings(), adminAPI.getFootballCache()]);
     setPrompts(promptsResponse.data);
+    setCacheStats(cacheResponse.data);
     setGlobalSetting({
       apiBaseUrl: globalResponse.data?.apiBaseUrl || 'https://api.openai.com/v1',
       model: globalResponse.data?.model || 'gpt-4o-mini',
@@ -31,11 +38,22 @@ const AdminLLM: React.FC = () => {
     setPrompts(current => current.map(prompt => prompt.key === key ? { ...prompt, ...patch } : prompt));
   };
 
+  const getPromptTitle = (prompt: Prompt) => promptLanguage === 'en' ? (prompt.titleEn || prompt.title) : prompt.title;
+  const getPromptContent = (prompt: Prompt) => promptLanguage === 'en' ? (prompt.contentEn || prompt.content) : prompt.content;
+  const updateLocalizedPrompt = (key: string, field: 'title' | 'content', value: string) => {
+    if (promptLanguage === 'en') {
+      updatePrompt(key, field === 'title' ? { titleEn: value } : { contentEn: value });
+    } else {
+      updatePrompt(key, field === 'title' ? { title: value } : { content: value });
+    }
+  };
+
   const saveGlobal = async () => {
     if (!globalSetting.apiBaseUrl || !globalSetting.model || (globalSetting.isGlobalEnabled && !globalSetting.hasApiKey && !globalApiKey)) {
-      alert('开启全局 AI 时需要填写 API 地址、模型和 API Key');
+      alert(t('llmAdmin.globalRequired'));
       return;
     }
+
     setSavingGlobal(true);
     try {
       const response = await llmAPI.saveGlobalSettings({ ...globalSetting, apiKey: globalApiKey || undefined });
@@ -47,90 +65,135 @@ const AdminLLM: React.FC = () => {
         hasApiKey: !!response.data.hasApiKey
       });
       setGlobalApiKey('');
-      alert('全局 AI 配置已保存');
+      alert(t('llmAdmin.globalSaved'));
     } catch (error: any) {
-      alert(error.response?.data?.error || '保存失败');
+      alert(error.response?.data?.error || t('llm.saveFailed'));
     } finally {
       setSavingGlobal(false);
     }
   };
 
   const savePrompt = async (prompt: Prompt) => {
-    setSavingKey(prompt.key);
+    setSavingKey(`${promptLanguage}:${prompt.key}`);
     try {
       const response = await llmAPI.updatePrompt(prompt.key, {
-        title: prompt.title,
-        content: prompt.content,
-        isActive: prompt.isActive
+        title: getPromptTitle(prompt),
+        content: getPromptContent(prompt),
+        isActive: prompt.isActive,
+        language: promptLanguage
       });
       updatePrompt(prompt.key, response.data);
     } catch (error: any) {
-      alert(error.response?.data?.error || '保存失败');
+      alert(error.response?.data?.error || t('llm.saveFailed'));
     } finally {
       setSavingKey(null);
+    }
+  };
+
+  const clearFootballCache = async () => {
+    if (!window.confirm(t('llmAdmin.clearFootballCacheConfirm'))) return;
+    setClearingCache(true);
+    try {
+      await adminAPI.clearFootballCache();
+      const response = await adminAPI.getFootballCache();
+      setCacheStats(response.data);
+      alert(t('llmAdmin.footballCacheCleared'));
+    } catch (error: any) {
+      alert(error.response?.data?.error || t('llmAdmin.clearFootballCacheFailed'));
+    } finally {
+      setClearingCache(false);
     }
   };
 
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">LLM 管理</h1>
-        <p className="mt-2 text-sm text-gray-600">维护 AI 对决的全局配置和提示词模板。普通用户没有个人配置时，会自动使用已开启的全局 AI 配置。</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t('llmAdmin.title')}</h1>
+        <p className="mt-2 text-sm text-gray-600">{t('llmAdmin.subtitle')}</p>
       </div>
 
       <div className="mb-6 rounded-lg bg-white p-5 shadow">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">全局 AI 配置</h2>
-            <p className="mt-1 text-sm text-gray-600">开启后，未配置个人 API 的用户也可以使用 AI 对决。</p>
+            <h2 className="text-lg font-semibold text-gray-900">{t('llmAdmin.globalSettings')}</h2>
+            <p className="mt-1 text-sm text-gray-600">{t('llmAdmin.globalDescription')}</p>
           </div>
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
             <input type="checkbox" checked={globalSetting.isGlobalEnabled} onChange={event => setGlobalSetting(current => ({ ...current, isGlobalEnabled: event.target.checked }))} />
-            开启全局 AI
+            {t('llmAdmin.enableGlobal')}
           </label>
         </div>
+
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block">
-            <span className="text-sm font-medium text-gray-700">API 地址</span>
+            <span className="text-sm font-medium text-gray-700">{t('llm.apiBaseUrl')}</span>
             <input className="input mt-1" value={globalSetting.apiBaseUrl} onChange={event => setGlobalSetting(current => ({ ...current, apiBaseUrl: event.target.value }))} placeholder="https://api.openai.com/v1" />
           </label>
           <label className="block">
-            <span className="text-sm font-medium text-gray-700">模型</span>
+            <span className="text-sm font-medium text-gray-700">{t('llm.model')}</span>
             <input className="input mt-1" value={globalSetting.model} onChange={event => setGlobalSetting(current => ({ ...current, model: event.target.value }))} placeholder="gpt-4o-mini" />
           </label>
           <label className="block md:col-span-2">
-            <span className="text-sm font-medium text-gray-700">API Key {globalSetting.hasApiKey && <span className="text-green-700">已保存</span>}</span>
-            <input className="input mt-1" type="password" value={globalApiKey} onChange={event => setGlobalApiKey(event.target.value)} placeholder={globalSetting.hasApiKey ? '留空则不修改当前 Key' : '请输入 API Key'} />
+            <span className="text-sm font-medium text-gray-700">
+              {t('llm.apiKey')} {globalSetting.hasApiKey && <span className="text-green-700">{t('common.saved')}</span>}
+            </span>
+            <input className="input mt-1" type="password" value={globalApiKey} onChange={event => setGlobalApiKey(event.target.value)} placeholder={globalSetting.hasApiKey ? t('llm.keepKey') : t('llm.enterKey')} />
           </label>
           <label className="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" checked={globalSetting.voiceEnabled} onChange={event => setGlobalSetting(current => ({ ...current, voiceEnabled: event.target.checked }))} />
-            默认开启浏览器语音播报
+            {t('llm.voiceEnabled')}
           </label>
         </div>
         <div className="mt-4 flex justify-end">
           <button onClick={saveGlobal} disabled={savingGlobal} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50">
-            {savingGlobal ? '保存中...' : '保存全局配置'}
+            {savingGlobal ? t('common.saving') : t('llmAdmin.saveGlobal')}
           </button>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-lg bg-white p-5 shadow">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{t('llmAdmin.footballCache')}</h2>
+            <p className="mt-1 text-sm text-gray-600">{t('llmAdmin.footballCacheDesc')}</p>
+            <p className="mt-2 text-sm text-gray-700">
+              {t('llmAdmin.apiCacheCount')}: {cacheStats?.apiCacheCount ?? '-'} · {t('llmAdmin.imageCacheFiles')}: {cacheStats?.imageCacheFiles ?? '-'}
+            </p>
+          </div>
+          <button onClick={clearFootballCache} disabled={clearingCache} className="rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:opacity-50">
+            {clearingCache ? t('common.loading') : t('llmAdmin.clearFootballCache')}
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center justify-between rounded-lg bg-white p-4 shadow">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">{promptLanguage === 'zh' ? '中文提示词' : 'English Prompts'}</h2>
+          <p className="mt-1 text-sm text-gray-600">{promptLanguage === 'zh' ? 'AI 对决为中文界面用户使用这一套提示词。' : 'AI Duel uses these prompts when the user language is English.'}</p>
+        </div>
+        <div className="inline-flex overflow-hidden rounded border border-gray-300 text-sm">
+          <button type="button" onClick={() => setPromptLanguage('zh')} className={`px-3 py-2 ${promptLanguage === 'zh' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>中文</button>
+          <button type="button" onClick={() => setPromptLanguage('en')} className={`px-3 py-2 ${promptLanguage === 'en' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>English</button>
         </div>
       </div>
 
       <div className="space-y-4">
         {prompts.map(prompt => (
-          <div key={prompt.key} className="rounded-lg bg-white p-5 shadow">
+          <div key={`${promptLanguage}:${prompt.key}`} className="rounded-lg bg-white p-5 shadow">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-xs uppercase text-gray-500">{prompt.key}</div>
-                <input className="mt-1 w-full text-lg font-semibold text-gray-900 outline-none" value={prompt.title} onChange={event => updatePrompt(prompt.key, { title: event.target.value })} />
+                <input className="mt-1 w-full text-lg font-semibold text-gray-900 outline-none" value={getPromptTitle(prompt)} onChange={event => updateLocalizedPrompt(prompt.key, 'title', event.target.value)} />
               </div>
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" checked={prompt.isActive} onChange={event => updatePrompt(prompt.key, { isActive: event.target.checked })} />
-                启用
+                {t('common.enabled')}
               </label>
             </div>
-            <textarea className="mt-4 min-h-[150px] w-full rounded border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none" value={prompt.content} onChange={event => updatePrompt(prompt.key, { content: event.target.value })} />
+            <textarea className="mt-4 min-h-[150px] w-full rounded border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none" value={getPromptContent(prompt)} onChange={event => updateLocalizedPrompt(prompt.key, 'content', event.target.value)} />
             <div className="mt-3 flex justify-end">
-              <button onClick={() => savePrompt(prompt)} disabled={savingKey === prompt.key} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50">
-                {savingKey === prompt.key ? '保存中...' : '保存'}
+              <button onClick={() => savePrompt(prompt)} disabled={savingKey === `${promptLanguage}:${prompt.key}`} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50">
+                {savingKey === `${promptLanguage}:${prompt.key}` ? t('common.saving') : t('common.save')}
               </button>
             </div>
           </div>

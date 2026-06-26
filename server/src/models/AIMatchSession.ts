@@ -48,6 +48,9 @@ export class AIMatchSession {
   @Column({ type: 'text', nullable: true })
   model?: string;
 
+  @Column({ type: 'text', default: 'zh' })
+  language: 'zh' | 'en' = 'zh';
+
   @Column({ type: 'boolean', default: false })
   savedToMatch: boolean = false;
 

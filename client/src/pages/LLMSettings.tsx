@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useI18n } from '../contexts/I18nContext';
 import { llmAPI } from '../services/api';
 
 const LLMSettings: React.FC = () => {
@@ -9,6 +10,7 @@ const LLMSettings: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { t } = useI18n();
 
   useEffect(() => {
     llmAPI.getSettings()
@@ -25,51 +27,54 @@ const LLMSettings: React.FC = () => {
 
   const save = async () => {
     if (!apiBaseUrl || !model || (!hasApiKey && !apiKey)) {
-      alert('请填写 API 地址、模型和 API Key');
+      alert(t('llm.required'));
       return;
     }
+
     setSaving(true);
     try {
       const response = await llmAPI.saveSettings({ apiBaseUrl, apiKey: apiKey || undefined, model, voiceEnabled });
       setHasApiKey(!!response.data.hasApiKey);
       setApiKey('');
-      alert('AI 配置已保存');
+      alert(t('llm.saved'));
     } catch (error: any) {
-      alert(error.response?.data?.error || '保存失败');
+      alert(error.response?.data?.error || t('llm.saveFailed'));
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="text-center py-12">加载中...</div>;
+  if (loading) return <div className="py-12 text-center">{t('common.loading')}</div>;
 
   return (
-    <div className="max-w-3xl mx-auto bg-white rounded-lg shadow p-6">
-      <h1 className="text-2xl font-bold text-gray-900">AI 对决配置</h1>
-      <p className="mt-2 text-sm text-gray-600">配置 OpenAI 兼容接口。API Key 会加密保存在后端，不会回显。</p>
+    <div className="mx-auto max-w-3xl rounded-lg bg-white p-6 shadow">
+      <h1 className="text-2xl font-bold text-gray-900">{t('llm.title')}</h1>
+      <p className="mt-2 text-sm text-gray-600">{t('llm.description')}</p>
 
       <div className="mt-6 space-y-4">
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">API 地址</span>
+          <span className="text-sm font-medium text-gray-700">{t('llm.apiBaseUrl')}</span>
           <input className="input mt-1" value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">API Key {hasApiKey && <span className="text-green-700">已保存</span>}</span>
-          <input className="input mt-1" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={hasApiKey ? '留空则不修改现有 Key' : '请输入 API Key'} />
+          <span className="text-sm font-medium text-gray-700">
+            {t('llm.apiKey')} {hasApiKey && <span className="text-green-700">{t('common.saved')}</span>}
+          </span>
+          <input className="input mt-1" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={hasApiKey ? t('llm.keepKey') : t('llm.enterKey')} />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">模型</span>
+          <span className="text-sm font-medium text-gray-700">{t('llm.model')}</span>
           <input className="input mt-1" value={model} onChange={event => setModel(event.target.value)} placeholder="gpt-4o-mini" />
         </label>
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={voiceEnabled} onChange={event => setVoiceEnabled(event.target.checked)} />
-          默认开启浏览器语音播报
+          {t('llm.voiceEnabled')}
         </label>
       </div>
 
       <div className="mt-6 flex justify-end">
         <button onClick={save} disabled={saving} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50">
-          {saving ? '保存中...' : '保存配置'}
+          {saving ? t('common.saving') : t('llm.saveSettings')}
         </button>
       </div>
     </div>
