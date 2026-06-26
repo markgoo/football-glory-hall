@@ -1,5 +1,7 @@
 # Football Glory Hall
 
+[English README](./README.en.md)
+
 一个足球杯赛模拟与荣耀记录系统。支持创建俱乐部杯赛、国家队杯赛、真实赛事模板、自动模拟比赛、掷骰子手动比赛、晋级图和历史记录。
 
 ## 在线试用
