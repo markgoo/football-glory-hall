@@ -19,6 +19,7 @@ type PenaltyKick = { side: ManualSideKey; shooter?: number; keeper?: number; goa
 type BracketColumn = { title: string; matches: Match[] };
 type ChampionInfo = { name: string; source: 'official' | 'final' };
 type AIMatchSession = { id: string; durationMinutes: number; status: 'ready' | 'running' | 'finished' | 'saved'; currentMinute: number; homeScore: number; awayScore: number; homePlan?: any; awayPlan?: any; events?: Array<{ minute: number; type: string; team: string; player?: string; key?: boolean; text: string }>; statistics?: any; engineState?: any; model?: string };
+type AIMatchEvent = NonNullable<AIMatchSession['events']>[number];
 type AIInteractiveEvent = { minute: number; team: ManualSideKey; player?: string; text: string };
 type SyncRealResult = { ok: boolean; updatedCount?: number; provider?: string; fixtureCount?: number; completedFixtureCount?: number; leagueId?: number; leagueName?: string; searchedLeagueIds?: number[]; unmatchedMatches?: string[]; error?: string };
 type GroupStanding = {
@@ -167,6 +168,65 @@ const formatAIEventText = (text?: string, event?: { team?: string; player?: stri
   }
   return value;
 };
+const getAIPlayerBroadcastName = (event?: { team?: string; player?: string }, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
+  const playerName = String(event?.player || '').trim();
+  if (!playerName) return language === 'en' ? 'The player' : '这名球员';
+  const plan = event?.team === 'away' ? session?.awayPlan : event?.team === 'home' ? session?.homePlan : undefined;
+  const player = Array.isArray(plan?.lineup) ? plan.lineup.find((item: any) => item.name === playerName) : undefined;
+  if (player?.number) return language === 'en' ? `Number ${player.number}, ${playerName}` : `${player.number}号，${player.number}号${playerName}`;
+  return playerName;
+};
+const getAITeamBroadcastName = (event?: { team?: string }, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
+  const team = event?.team === 'away' ? session?.awayPlan?.teamName : event?.team === 'home' ? session?.homePlan?.teamName : '';
+  return team || (language === 'en' ? 'the attacking side' : '进攻方');
+};
+const compactAIText = (text?: string, maxLength = 28) => {
+  const first = String(text || '')
+    .replace(/^上帝摇骰子判定[:：]\s*/, '')
+    .split(/[。！？.!?]/)[0]
+    .replace(/第?\d+['’分钟\s，,：:]*/g, '')
+    .trim();
+  return first.length > maxLength ? `${first.slice(0, maxLength)}...` : first;
+};
+const formatAIBroadcastText = (event?: AIMatchEvent, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
+  if (!event) return language === 'en' ? 'The booth is waiting for kickoff.' : '解说席正在连线，等待开球哨响。';
+  const player = getAIPlayerBroadcastName(event, session, language);
+  const team = getAITeamBroadcastName(event, session, language);
+  if (language === 'en') {
+    if (event.type === 'goal') return `${player}! Goal! The net shakes.`;
+    if (event.type === 'chance') return `${player}, into the box... shot coming!`;
+    if (event.type === 'save') return `${player} shoots... saved by the keeper!`;
+    if (event.type === 'penalty') return `${team} win a penalty! Big moment.`;
+    if (event.type === 'card') return `${player}, late challenge. The card is out.`;
+    if (event.type === 'injury') return `${player} is down. Play stops.`;
+    return compactAIText(event.text, 48) || `${team} slow it down in midfield.`;
+  }
+  if (event.type === 'goal') return `${player}！打门！球进了！`;
+  if (event.type === 'chance') return `${player}，突入禁区，机会来了！`;
+  if (event.type === 'save') return `${player}起脚，哎呀，被门将挡出！`;
+  if (event.type === 'penalty') return `${team}，点球！这下紧张了。`;
+  if (event.type === 'card') return `${player}动作大了，裁判掏牌。`;
+  if (event.type === 'injury') return `${player}倒地了，比赛暂停。`;
+  return compactAIText(event.text) || `${team}控一下节奏。`;
+};
+const isUrgentAIEvent = (event?: AIMatchEvent) => ['goal', 'penalty', 'card', 'injury'].includes(event?.type || '');
+const formatAIUrgentBroadcastText = (event?: AIMatchEvent, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
+  if (!event) return '';
+  const player = getAIPlayerBroadcastName(event, session, language);
+  const team = getAITeamBroadcastName(event, session, language);
+  if (language === 'en') {
+    if (event.type === 'goal') return `Goal! Goal! ${player} scores!`;
+    if (event.type === 'penalty') return `Penalty! ${team} have a penalty!`;
+    if (event.type === 'card') return `Card shown! ${player} is in trouble!`;
+    if (event.type === 'injury') return `Stop, stop. ${player} is down.`;
+    return formatAIBroadcastText(event, session, language);
+  }
+  if (event.type === 'goal') return `进球啦！进球啦！${player}，球进了！`;
+  if (event.type === 'penalty') return `点球！${team}获得点球！`;
+  if (event.type === 'card') return `出牌了！${player}，裁判掏牌！`;
+  if (event.type === 'injury') return `停一下，${player}倒地了！`;
+  return formatAIBroadcastText(event, session, language);
+};
 const emptyManualGame = (): ManualGame => ({ firstHalf: {}, secondHalf: {} });
 const getPenaltyScore = (kicks: PenaltyKick[], side: ManualSideKey) => kicks.filter(kick => kick.side === side && kick.goal).length;
 const getPenaltyComplete = (kicks: PenaltyKick[]) => {
@@ -289,6 +349,18 @@ const compareMatches = (a: Match, b: Match, mode: MatchSortMode, lookup: Record<
   if (mode === 'round-desc') return b.round - a.round || compareMatchStageNames(getMatchStageName(a, lookup), getMatchStageName(b, lookup));
   if (mode === 'team-asc') return (a.homeTeam?.name || '').localeCompare(b.homeTeam?.name || '') || (a.awayTeam?.name || '').localeCompare(b.awayTeam?.name || '');
   return a.round - b.round || compareMatchStageNames(getMatchStageName(a, lookup), getMatchStageName(b, lookup));
+};
+const compareNextMatchOrder = (a: Match, b: Match, lookup: Record<string, string>) => {
+  const aTime = a.scheduledAt ? new Date(a.scheduledAt).getTime() : Number.MAX_SAFE_INTEGER;
+  const bTime = b.scheduledAt ? new Date(b.scheduledAt).getTime() : Number.MAX_SAFE_INTEGER;
+  if (aTime !== bTime) return aTime - bTime;
+  return compareMatches(a, b, 'round-asc', lookup);
+};
+const scrollElementToViewportCenter = (element: HTMLElement, behavior: ScrollBehavior = 'smooth') => {
+  const rect = element.getBoundingClientRect();
+  const pageTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+  const targetTop = pageTop + rect.top - Math.max(0, (window.innerHeight - rect.height) / 2);
+  window.scrollTo({ top: Math.max(0, targetTop), behavior });
 };
 const formatMatchTime = (value?: string) => value ? new Date(value).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '时间待定';
 const isScheduleVisibleMatch = (match: Match) => !!match.groupName || match.status === 'completed' || (!!match.homeTeam && !!match.awayTeam);
@@ -431,6 +503,7 @@ const TournamentDetail: React.FC = () => {
   const [teamsOpen, setTeamsOpen] = useState(false);
   const [standingsOpen, setStandingsOpen] = useState(false);
   const [collapsedRounds, setCollapsedRounds] = useState<Set<number>>(new Set());
+  const [pendingScrollMatchId, setPendingScrollMatchId] = useState<string | null>(null);
   const favoriteStorageKey = id ? `football-glory-hall:favorites:${id}` : '';
   const clearManualRollTimer = (half: ManualHalfKey, side: 'home' | 'away') => {
     const key = `${half}:${side}`;
@@ -476,7 +549,9 @@ const TournamentDetail: React.FC = () => {
   const groupOptions = useMemo(() => Object.keys(groupMatchesByStage(scheduleMatches, stageLookup)).sort(compareMatchStageNames), [scheduleMatches, stageLookup]);
   const roundOptions = useMemo(() => Array.from(new Set(scheduleMatches.map(match => match.round))).sort((a, b) => a - b), [scheduleMatches]);
   const completedMatchesCount = useMemo(() => matches.filter(match => match.status === 'completed').length, [matches]);
-  const nextScheduledMatch = useMemo(() => scheduleMatches.find(match => match.status === 'scheduled'), [scheduleMatches]);
+  const nextScheduledMatch = useMemo(() => scheduleMatches
+    .filter(match => match.status === 'scheduled' && match.homeTeam && match.awayTeam)
+    .sort((a, b) => compareNextMatchOrder(a, b, stageLookup))[0], [scheduleMatches, stageLookup]);
   const canSyncRealResults = Boolean(tournament?.realTournamentTemplate) && matches.length > 0 && matches.every(match => match.status === 'scheduled');
   const favoriteTeams = useMemo(() => teams.filter(team => favoriteTeamIds.includes(team.id)), [teams, favoriteTeamIds]);
 
@@ -491,6 +566,35 @@ const TournamentDetail: React.FC = () => {
       .sort((a, b) => compareMatches(a, b, sortMode, stageLookup));
   }, [favoriteTeamIds, groupFilter, onlyFavorites, query, roundFilter, scheduleMatches, sortMode, stageLookup, statusFilter]);
   const filteredMatchesByRound = useMemo(() => groupMatchesByRoundAndStage(filteredMatches, stageLookup), [filteredMatches, stageLookup]);
+
+  useEffect(() => {
+    if (!pendingScrollMatchId) return;
+    let attempts = 0;
+    let cancelled = false;
+    const scroll = () => {
+      if (cancelled) return;
+      const element = document.getElementById(`match-${pendingScrollMatchId}`);
+      if (element) {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            if (cancelled) return;
+            scrollElementToViewportCenter(element, 'smooth');
+            window.setTimeout(() => {
+              if (cancelled) return;
+              const latestElement = document.getElementById(`match-${pendingScrollMatchId}`);
+              if (latestElement) scrollElementToViewportCenter(latestElement, 'auto');
+              setPendingScrollMatchId(null);
+            }, 450);
+          });
+        });
+        return;
+      }
+      attempts += 1;
+      if (attempts < 12) window.setTimeout(scroll, 50);
+    };
+    window.setTimeout(scroll, 0);
+    return () => { cancelled = true; };
+  }, [pendingScrollMatchId, filteredMatchesByRound]);
 
   const toggleFavoriteTeam = (teamId: string) => {
     const next = favoriteTeamIds.includes(teamId) ? favoriteTeamIds.filter(id => id !== teamId) : [...favoriteTeamIds, teamId];
@@ -534,14 +638,18 @@ const TournamentDetail: React.FC = () => {
   };
   const speakAIEvents = (session: AIMatchSession, previousEventCount: number) => {
     if (!aiVoiceEnabled || !('speechSynthesis' in window)) return;
-    const text = (session.events || []).slice(previousEventCount).map(event => event.text).join('。');
+    const newEvents = (session.events || []).slice(previousEventCount);
+    const urgentEvents = newEvents.filter(isUrgentAIEvent);
+    const text = (urgentEvents.length > 0 ? urgentEvents : newEvents)
+      .map(event => urgentEvents.length > 0 ? formatAIUrgentBroadcastText(event, session, language) : formatAIBroadcastText(event, session, language))
+      .join(language === 'en' ? '. ' : '。');
     if (!text) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.rate = 1.18;
-    utterance.pitch = 1.12;
-    utterance.volume = 0.95;
+    utterance.lang = language === 'en' ? 'en-US' : 'zh-CN';
+    utterance.rate = urgentEvents.length > 0 ? 1.28 : 1.18;
+    utterance.pitch = urgentEvents.length > 0 ? 1.32 : 1.12;
+    utterance.volume = 1;
     window.speechSynthesis.speak(utterance);
   };
   const openAIMatch = async (match: Match) => {
@@ -556,12 +664,7 @@ const TournamentDetail: React.FC = () => {
     setAiPenaltyKicks([]);
     setAiPenaltyDiceOpen(false);
     setAiInteractiveEvent(null);
-    try {
-      const settings = await llmAPI.getSettings();
-      setAiVoiceEnabled(!!settings.data?.voiceEnabled);
-    } catch {
-      setAiVoiceEnabled(false);
-    }
+    setAiVoiceEnabled(true);
   };
   const startAIDuel = async () => {
     if (!aiMatch || aiRunning) return;
@@ -895,12 +998,13 @@ const TournamentDetail: React.FC = () => {
     setStatusFilter('all');
     setQuery('');
     setOnlyFavorites(false);
+    setSortMode('round-asc');
     setCollapsedRounds(current => {
       const next = new Set(current);
       next.delete(nextScheduledMatch.round);
       return next;
     });
-    window.setTimeout(() => document.getElementById(`match-${nextScheduledMatch.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    setPendingScrollMatchId(nextScheduledMatch.id);
   };
   const scrollToPageTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
   const scrollToPageBottom = () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
@@ -1290,7 +1394,7 @@ const MatchRow: React.FC<{ match: Match; favoriteTeamIds: string[]; startingMatc
   const homeFavorite = match.homeTeam && favoriteTeamIds.includes(match.homeTeam.id);
   const awayFavorite = match.awayTeam && favoriteTeamIds.includes(match.awayTeam.id);
   const statusText = match.status === 'scheduled' ? text.scheduled : match.status === 'in_progress' ? text.inProgress : text.completed;
-  return <div id={`match-${match.id}`} className="scroll-mt-6 border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} fallback={match.homeTeam ? undefined : text.teamPending} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} fallback={match.awayTeam ? undefined : text.teamPending} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">{text.round(match.round)} - {stageName(match.bracketStage || getMatchStageName(match, {}), language)} - {statusText}{match.resultMode === 'manual' && <span className="ml-2 inline-flex rounded bg-green-300 px-2 py-0.5 text-xs font-bold text-black">{text.godDice}</span>}{match.resultMode === 'ai' && <span className="ml-2 inline-flex rounded bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">AI</span>}</p><p className="text-xs text-gray-500 mt-1">{match.scheduledAt ? formatMatchTime(match.scheduledAt) : text.timePending}{match.venue ? ` · ${match.venue}` : ''}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">{text.penalties} {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && match.homeTeam && match.awayTeam && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? text.startingOne : text.autoRun}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">{text.dice}</button><button onClick={() => onAIStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 sm:flex-none">{text.aiDuel}</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? text.viewDetail : text.viewStats}</Link></div></div></div>;
+  return <div id={`match-${match.id}`} className="scroll-mt-40 border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} fallback={match.homeTeam ? undefined : text.teamPending} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} fallback={match.awayTeam ? undefined : text.teamPending} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">{text.round(match.round)} - {stageName(match.bracketStage || getMatchStageName(match, {}), language)} - {statusText}{match.resultMode === 'manual' && <span className="ml-2 inline-flex rounded bg-green-300 px-2 py-0.5 text-xs font-bold text-black">{text.godDice}</span>}{match.resultMode === 'ai' && <span className="ml-2 inline-flex rounded bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">AI</span>}</p><p className="text-xs text-gray-500 mt-1">{match.scheduledAt ? formatMatchTime(match.scheduledAt) : text.timePending}{match.venue ? ` · ${match.venue}` : ''}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">{text.penalties} {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && match.homeTeam && match.awayTeam && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? text.startingOne : text.autoRun}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">{text.dice}</button><button onClick={() => onAIStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 sm:flex-none">{text.aiDuel}</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? text.viewDetail : text.viewStats}</Link></div></div></div>;
 };
 
 const formationCoordinates: Record<string, Array<{ x: number; y: number }>> = {
@@ -1438,6 +1542,7 @@ const AIMatchModal: React.FC<{
   onPenaltyDiceComplete: (shooter: number, keeper: number) => void;
   onClose: () => void;
 }> = ({ match, session, duration, running, saving, finishing, voiceEnabled, halftimePaused, interactiveEvent, penaltyKicks, penaltyDiceOpen, isAdmin, onDurationChange, onVoiceChange, onContinueSecondHalf, onInteractiveDiceClose, onInteractiveDiceComplete, onStart, onFinish, onSave, onPenaltyRoll, onPenaltyManualRoll, onPenaltyDiceClose, onPenaltyDiceComplete, onClose }) => {
+  const { language } = useI18n();
   const durations = [0.5, 1, 2, 4, 6, 8, 16, 20, 45, 90];
   const formatDurationOption = (value: number) => value < 1 ? '30秒' : `${value}分钟`;
   const finished = session?.status === 'finished';
@@ -1445,21 +1550,27 @@ const AIMatchModal: React.FC<{
   const penaltyComplete = getPenaltyComplete(penaltyKicks);
   const keyEvents = (session?.events || []).filter(event => event.key || ['goal', 'penalty', 'card', 'injury', 'chance', 'save'].includes(event.type));
   const commentaryEvents = [...(session?.events || [])].reverse();
-  const latestCommentary = formatAIEventText(commentaryEvents[0]?.text, commentaryEvents[0], session);
-  const displayKeyEvents = [...keyEvents].reverse();
+  const latestCommentary = formatAIBroadcastText(commentaryEvents[0], session, language);
   const [displayMinute, setDisplayMinute] = useState(0);
-  const [crowdEnabled, setCrowdEnabled] = useState(false);
+  const [crowdEnabled, setCrowdEnabled] = useState(true);
   const [startOptionsOpen, setStartOptionsOpen] = useState(false);
   const [goalFlash, setGoalFlash] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const clockStartedAt = useRef<number>();
   const previousScoreRef = useRef('0-0');
+  const previousCrowdEventCountRef = useRef(0);
   const crowdAudioRef = useRef<{ context: AudioContext; source: AudioBufferSourceNode; gain: GainNode }>();
 
   useEffect(() => {
     if (!session) {
       clockStartedAt.current = undefined;
       setDisplayMinute(0);
+      return;
+    }
+
+    if (halftimePaused) {
+      clockStartedAt.current = undefined;
+      setDisplayMinute(45);
       return;
     }
 
@@ -1475,33 +1586,62 @@ const AIMatchModal: React.FC<{
     }
 
     if (!clockStartedAt.current) {
-      const progress = Math.max(0, Math.min(session.currentMinute, AI_MATCH_TOTAL_MINUTES)) / AI_MATCH_TOTAL_MINUTES;
-      clockStartedAt.current = Date.now() - progress * duration * 60 * 1000;
+      const baseMinute = session.currentMinute >= 45 ? 45 : 0;
+      const phaseMinute = Math.max(baseMinute, Math.min(session.currentMinute, AI_MATCH_TOTAL_MINUTES));
+      const phaseDurationMs = (duration * 60 * 1000) / 2;
+      const phaseProgress = Math.max(0, Math.min(45, phaseMinute - baseMinute)) / 45;
+      clockStartedAt.current = Date.now() - phaseProgress * phaseDurationMs;
     }
 
     const timer = window.setInterval(() => {
       const elapsed = Date.now() - (clockStartedAt.current || Date.now());
-      const nextMinute = Math.min(AI_MATCH_TOTAL_MINUTES, (elapsed / (duration * 60 * 1000)) * AI_MATCH_TOTAL_MINUTES);
-      setDisplayMinute(Math.max(nextMinute, session.currentMinute));
+      const baseMinute = session.currentMinute >= 45 ? 45 : 0;
+      const phaseDurationMs = (duration * 60 * 1000) / 2;
+      const nextMinute = Math.min(baseMinute + 45, baseMinute + (elapsed / phaseDurationMs) * 45);
+      const floorMinute = baseMinute === 0 ? Math.min(session.currentMinute, 45) : session.currentMinute;
+      setDisplayMinute(Math.min(baseMinute + 45, Math.max(nextMinute, floorMinute)));
     }, 250);
 
     return () => window.clearInterval(timer);
-  }, [duration, finished, running, session]);
+  }, [duration, finished, halftimePaused, running, session]);
 
   useEffect(() => {
     const currentScore = `${session?.homeScore ?? 0}-${session?.awayScore ?? 0}`;
     if (!session) {
       previousScoreRef.current = currentScore;
+      previousCrowdEventCountRef.current = 0;
       setGoalFlash(false);
       return;
     }
     if (previousScoreRef.current !== currentScore) {
       previousScoreRef.current = currentScore;
       setGoalFlash(true);
+      if (crowdAudioRef.current) {
+        const now = crowdAudioRef.current.context.currentTime;
+        crowdAudioRef.current.gain.gain.cancelScheduledValues(now);
+        crowdAudioRef.current.gain.gain.setValueAtTime(crowdAudioRef.current.gain.gain.value, now);
+        crowdAudioRef.current.gain.gain.linearRampToValueAtTime(0.24, now + 0.15);
+        crowdAudioRef.current.gain.gain.linearRampToValueAtTime(0.075, now + 3.4);
+      }
       const timer = window.setTimeout(() => setGoalFlash(false), 3600);
       return () => window.clearTimeout(timer);
     }
   }, [session?.homeScore, session?.awayScore, session?.id]);
+
+  useEffect(() => {
+    if (!session || !crowdAudioRef.current) return;
+    const events = session.events || [];
+    const newEvents = events.slice(previousCrowdEventCountRef.current);
+    previousCrowdEventCountRef.current = events.length;
+    const urgent = newEvents.find(isUrgentAIEvent);
+    if (!urgent || urgent.type === 'goal') return;
+    const now = crowdAudioRef.current.context.currentTime;
+    const peak = urgent.type === 'penalty' ? 0.18 : 0.14;
+    crowdAudioRef.current.gain.gain.cancelScheduledValues(now);
+    crowdAudioRef.current.gain.gain.setValueAtTime(crowdAudioRef.current.gain.gain.value, now);
+    crowdAudioRef.current.gain.gain.linearRampToValueAtTime(peak, now + 0.12);
+    crowdAudioRef.current.gain.gain.linearRampToValueAtTime(0.075, now + 2.2);
+  }, [session?.events]);
 
   useEffect(() => {
     if (!crowdEnabled || (!running && !halftimePaused)) {
@@ -1634,7 +1774,7 @@ const AIMatchModal: React.FC<{
                 {(session?.events || []).length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">解说席正在连线，等待开球哨响。</div>}
                 {commentaryEvents.map((event, index) => (
                   <div key={`${event.minute}-${index}`} className={`rounded p-3 text-sm ${event.type === 'goal' ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-gray-700'}`}>
-                    <span className="font-semibold">{event.minute}'</span> {formatAIEventText(event.text, event, session)}
+                    <span className="font-semibold">{event.minute}'</span> {formatAIBroadcastText(event, session, language)}
                   </div>
                 ))}
               </div>
@@ -1643,7 +1783,7 @@ const AIMatchModal: React.FC<{
               <h3 className="font-semibold text-gray-900">文字直播</h3>
               <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
                 {keyEvents.length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">比赛关键时刻会在这里亮起。</div>}
-                {displayKeyEvents.map((event, index) => (
+                {commentaryEvents.map((event, index) => (
                   <div key={`key-${event.minute}-${index}`} className="rounded bg-amber-50 p-3 text-sm text-amber-900">
                     <span className="font-semibold">{event.minute}'</span> {formatAIEventText(event.text, event, session)}
                   </div>
