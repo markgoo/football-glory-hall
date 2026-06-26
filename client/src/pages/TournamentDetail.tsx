@@ -1012,6 +1012,7 @@ const TournamentDetail: React.FC = () => {
   const finishAIDuel = async () => {
     if (!aiMatch || aiFinishing) return;
     aiRunTokenRef.current += 1;
+    stopAIVoice();
     setAiFinishing(true);
     setAiRunning(false);
     setAiHalftimePaused(false);
