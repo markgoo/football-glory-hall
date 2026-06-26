@@ -3,12 +3,12 @@ import { useI18n } from '../contexts/I18nContext';
 import { adminAPI, llmAPI } from '../services/api';
 
 type Prompt = { id: string; key: string; title: string; titleEn?: string; content: string; contentEn?: string; isActive: boolean };
-type GlobalSetting = { apiBaseUrl: string; model: string; voiceEnabled: boolean; isGlobalEnabled: boolean; hasApiKey: boolean };
+type GlobalSetting = { apiBaseUrl: string; model: string; voiceEnabled: boolean; thinkingEnabled: boolean; reasoningEffort: string; isGlobalEnabled: boolean; hasApiKey: boolean };
 type PromptLanguage = 'zh' | 'en';
 
 const AdminLLM: React.FC = () => {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
-  const [globalSetting, setGlobalSetting] = useState<GlobalSetting>({ apiBaseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', voiceEnabled: false, isGlobalEnabled: false, hasApiKey: false });
+  const [globalSetting, setGlobalSetting] = useState<GlobalSetting>({ apiBaseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', voiceEnabled: false, thinkingEnabled: false, reasoningEffort: '', isGlobalEnabled: false, hasApiKey: false });
   const [globalApiKey, setGlobalApiKey] = useState('');
   const [savingGlobal, setSavingGlobal] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -25,6 +25,8 @@ const AdminLLM: React.FC = () => {
       apiBaseUrl: globalResponse.data?.apiBaseUrl || 'https://api.openai.com/v1',
       model: globalResponse.data?.model || 'gpt-4o-mini',
       voiceEnabled: !!globalResponse.data?.voiceEnabled,
+      thinkingEnabled: !!globalResponse.data?.thinkingEnabled,
+      reasoningEffort: globalResponse.data?.reasoningEffort || '',
       isGlobalEnabled: !!globalResponse.data?.isGlobalEnabled,
       hasApiKey: !!globalResponse.data?.hasApiKey
     });
@@ -61,6 +63,8 @@ const AdminLLM: React.FC = () => {
         apiBaseUrl: response.data.apiBaseUrl,
         model: response.data.model,
         voiceEnabled: !!response.data.voiceEnabled,
+        thinkingEnabled: !!response.data.thinkingEnabled,
+        reasoningEffort: response.data.reasoningEffort || '',
         isGlobalEnabled: !!response.data.isGlobalEnabled,
         hasApiKey: !!response.data.hasApiKey
       });
@@ -143,6 +147,21 @@ const AdminLLM: React.FC = () => {
             <input type="checkbox" checked={globalSetting.voiceEnabled} onChange={event => setGlobalSetting(current => ({ ...current, voiceEnabled: event.target.checked }))} />
             {t('llm.voiceEnabled')}
           </label>
+          <div className="rounded border border-gray-200 bg-gray-50 p-4 md:col-span-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <input type="checkbox" checked={globalSetting.thinkingEnabled} onChange={event => setGlobalSetting(current => ({ ...current, thinkingEnabled: event.target.checked }))} />
+              思考模式
+            </label>
+            <p className="mt-1 text-xs text-gray-500">关闭时全局请求会发送 <code>{'{"thinking":{"type":"disabled"}}'}</code>；开启后可附加 OpenAI 兼容 <code>reasoning_effort</code>。</p>
+            <label className="mt-3 block">
+              <span className="text-sm font-medium text-gray-700">思考强度</span>
+              <select className="input mt-1" value={globalSetting.reasoningEffort} onChange={event => setGlobalSetting(current => ({ ...current, reasoningEffort: event.target.value }))} disabled={!globalSetting.thinkingEnabled}>
+                <option value="">默认 high</option>
+                <option value="high">high</option>
+                <option value="max">max</option>
+              </select>
+            </label>
+          </div>
         </div>
         <div className="mt-4 flex justify-end">
           <button onClick={saveGlobal} disabled={savingGlobal} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50">

@@ -27,6 +27,12 @@ export class LLMSetting {
   @Column({ type: 'boolean', default: false })
   voiceEnabled: boolean = false;
 
+  @Column({ type: 'boolean', default: false })
+  thinkingEnabled: boolean = false;
+
+  @Column({ type: 'text', nullable: true })
+  reasoningEffort?: string;
+
   @CreateDateColumn()
   createdAt!: Date;
 

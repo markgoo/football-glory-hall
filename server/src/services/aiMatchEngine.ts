@@ -113,7 +113,7 @@ export class AIMatchEngine {
     return {
       version: 1,
       matchTotalMinutes: 90,
-      segmentMinutes: 5,
+      segmentMinutes: 3,
       goalBudget,
       usedGoalBudget: 0,
       bigChanceBudget: clamp(goalBudget + 2 + Math.floor(Math.random() * 3), 3, 8),
@@ -157,6 +157,7 @@ export class AIMatchEngine {
     const defendingSide: AISide = attackingSide === 'home' ? 'away' : 'home';
     const attackingPlan = attackingSide === 'home' ? input.homePlan : input.awayPlan;
     const attackingTeam = attackingSide === 'home' ? input.match.homeTeam : input.match.awayTeam;
+    const defendingTeam = defendingSide === 'home' ? input.match.homeTeam : input.match.awayTeam;
 
     const scoreDelta = { home: 0, away: 0 };
     const events: AIMatchEngineEvent[] = [];
@@ -181,9 +182,27 @@ export class AIMatchEngine {
       type: 'commentary',
       team: attackingSide,
       key: false,
-      text: `${attackingTeam?.name || '进攻方'} 开始提速，试图从中路和边路之间找到空当。`,
+      text: JSON.stringify({ phase: 'build_up', team: attackingTeam?.name || '进攻方', opponent: defendingTeam?.name || '防守方' }),
       engine: true
     });
+    events.push({
+      minute: Math.min(nextMinute, input.currentMinute + 1),
+      type: 'commentary',
+      team: attackingSide,
+      key: false,
+      text: JSON.stringify({ phase: 'attacking_shape', team: attackingTeam?.name || '进攻方', opponent: defendingTeam?.name || '防守方' }),
+      engine: true
+    });
+    if (chance(0.74)) {
+      events.push({
+        minute: Math.min(nextMinute, input.currentMinute + 3),
+        type: 'commentary',
+        team: defendingSide,
+        key: false,
+        text: JSON.stringify({ phase: 'defensive_pressure', team: defendingTeam?.name || '防守方', opponent: attackingTeam?.name || '进攻方' }),
+        engine: true
+      });
+    }
 
     stats[`${attackingSide}Shots` as 'homeShots' | 'awayShots'] += chance(0.58) ? 1 : 0;
 
@@ -218,7 +237,7 @@ export class AIMatchEngine {
         type: 'commentary',
         team: 'neutral',
         key: false,
-        text: `${sideName} 的推进被防线延缓，比赛重新回到中场争夺。`,
+        text: JSON.stringify({ phase: 'attack_reset', team: sideName, opponent: defendingTeam?.name || '防守方' }),
         engine: true
       });
     }
@@ -232,7 +251,7 @@ export class AIMatchEngine {
       nextMinute,
       scoreDelta,
       statisticsDelta: stats,
-      events,
+      events: events.sort((a, b) => a.minute - b.minute),
       engineState: state
     };
   }

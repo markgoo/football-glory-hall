@@ -8,6 +8,7 @@ router.use(authenticateToken);
 
 router.get('/settings', LLMController.getSettings);
 router.put('/settings', LLMController.saveSettings);
+router.post('/dice-commentary', LLMController.diceCommentary);
 router.get('/admin/global-settings', requireAdmin, LLMController.getGlobalSettings);
 router.put('/admin/global-settings', requireAdmin, LLMController.saveGlobalSettings);
 router.get('/prompts', LLMController.getPrompts);

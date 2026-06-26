@@ -20,21 +20,71 @@ const normalizeLanguage = (value: any): UILanguage => value === 'en' ? 'en' : 'z
 const normalizeApiBaseUrl = (value: string) => value.replace(/\/+$/, '');
 
 const languageName = (language: UILanguage) => language === 'en' ? 'English' : 'Simplified Chinese';
+const normalizeReasoningEffort = (value?: string) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['max', 'xhigh'].includes(normalized)) return 'max';
+  if (['low', 'medium', 'high'].includes(normalized)) return 'high';
+  return '';
+};
+const buildChatCompletionBody = (setting: LLMSetting, body: Record<string, any>) => {
+  const reasoningEffort = normalizeReasoningEffort(setting.reasoningEffort) || 'high';
+  return {
+    ...body,
+    thinking: { type: setting.thinkingEnabled ? 'enabled' : 'disabled' },
+    ...(setting.thinkingEnabled && reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
+  };
+};
+const stripThinkingControls = (body: Record<string, any>) => {
+  const rest = { ...body };
+  delete rest.thinking;
+  delete rest.reasoning_effort;
+  return rest;
+};
+const postChatCompletion = async (setting: LLMSetting, body: Record<string, any>, timeout: number) => {
+  const url = `${normalizeApiBaseUrl(setting.apiBaseUrl)}/chat/completions`;
+  const headers = { Authorization: `Bearer ${decrypt(setting.apiKey || '')}` };
+  const payload = buildChatCompletionBody(setting, body);
+  try {
+    return await axios.post(url, payload, { headers, timeout });
+  } catch (error: any) {
+    if (error.response?.status && error.response.status < 500) {
+      return axios.post(url, stripThinkingControls(payload), { headers, timeout });
+    }
+    throw error;
+  }
+};
 const languageInstruction = (language: UILanguage) => {
   if (language === 'en') {
     return [
       'Output language: English.',
       'You are a football radio commentator. Use natural football commentary, not generic AI narration.',
+      'For each event return two fields: text for the live text feed, and broadcastText for radio voice.',
+      'broadcastText should be one coherent radio commentary paragraph, vivid and meaningful, with enough context to feel continuous. Avoid empty filler and avoid over-short dry lines.',
+      'broadcastText must be natural and player-focused when possible. Prefer player names over team names, but keep the tactical context if useful.',
+      'You will receive recentBroadcastTexts. Do not reuse their sentence rhythm, key verbs, or player pair framing. If the current event is routine, change the camera angle: first touch, body shape, crowd reaction, defender step, loose ball, keeper distribution, or tempo change.',
+      'Broadcast style: passionate Chinese-football-commentary energy, fast tempo, emotional, explosive on big moments, but do not imitate any specific real person.',
+      'For goals, penalties, cards, injuries, and big chances, broadcastText should sound urgent and emotional.',
+      'If the event type is chance or penalty, it is unresolved. Describe only the opportunity and tension. Do not say it was scored, saved, missed, converted, or denied. The dice result will arrive as a later event.',
+      'If mentioning the score, use only the provided score object. Never infer, increment, or invent a different score.',
       'Only polish the already-decided events. Do not invent goals, scores, shots, corners, cards, injuries, substitutions, or statistics.',
-      'Return strict JSON only: {"events":[{"index":0,"text":"polished English commentary"}]}.'
+      'Return strict JSON only: {"events":[{"index":0,"text":"polished English live text","broadcastText":"coherent radio commentary paragraph"}]}.'
     ].join('\n');
   }
 
   return [
     '输出语言：简体中文。',
     '你是足球广播解说员，语气要像真实足球解说，不要出现模板化开场。',
+    '每个事件返回两个字段：text 用于文字直播，broadcastText 用于广播语音。',
+    'broadcastText 写成一段连贯的广播解说，内容要有意义、有过程感，不要空洞灌水，也不要短到像提示词。',
+    'broadcastText 要自然，能说球员就说球员，但需要战术背景时也可以说球队。',
+    '中文输出时，英文球员名要尽量音译成中文口播名，不要直接照读整串英文缩写；可以保留号码，例如“9号巴蒂斯图塔”。',
+    '你会收到 recentBroadcastTexts。不要复用里面的句式节奏、核心动词、球员组合表达。如果当前事件普通，就换一个镜头：第一脚触球、身体姿态、看台反应、防守队员上步、二点球、门将发起、节奏变化。',
+    '广播风格：激情足球解说，高能、快节奏、关键时刻爆发，但不要模仿任何具体真人。',
+    '进球、点球、红黄牌、伤停和绝佳机会的 broadcastText 要更急、更激动。',
+    '如果事件类型是 chance 或 penalty，说明这只是待判定机会。只能描述机会和紧张感，不要说已经进球、扑出、打飞、罚进或罚丢。骰子结果会作为后续事件传入。',
+    '如果提到比分，只能使用输入里的 score 对象。禁止自行推算、递增或编造其他比分。',
     '你只负责润色系统已经决定的比赛事件，禁止新增进球、比分、射门、角球、红黄牌、伤病、换人或任何统计。',
-    '严格只返回 JSON：{"events":[{"index":0,"text":"润色后的中文解说"}]}。'
+    '严格只返回 JSON：{"events":[{"index":0,"text":"润色后的中文文字直播","broadcastText":"一段连贯的广播解说"}]}。'
   ].join('\n');
 };
 
@@ -208,6 +258,22 @@ const extractJson = (content: string) => {
   return JSON.parse(fenced ? fenced[1] : trimmed);
 };
 
+const withChineseBroadcastNames = (plan: any) => {
+  if (!plan?.lineup) return plan;
+  return {
+    ...plan,
+    lineup: plan.lineup.map((player: any) => {
+      const raw = String(player?.nameZh || player?.name || player?.nameEn || '').trim();
+      const parts = raw.split(/\s+/).filter(Boolean);
+      const surname = parts.length > 1 ? parts[parts.length - 1] : raw;
+      return {
+        ...player,
+        broadcastNameHint: player?.nameZh || (player?.number ? `${player.number}号 ${surname}` : surname)
+      };
+    })
+  };
+};
+
 const balancePair = (home: number, away: number, maxDiff: number, minRatio: number) => {
   let balancedHome = home;
   let balancedAway = away;
@@ -244,6 +310,70 @@ const mergeStatistics = (current: any, delta: any) => {
 };
 
 export class LLMController {
+  static async diceCommentary(req: AuthRequest, res: Response) {
+    const effectiveSetting = await getEffectiveLLMSetting(req.user!.id);
+    const setting = effectiveSetting.setting;
+    if (!setting?.apiKey) return res.json({ enabled: false });
+
+    const language = normalizeLanguage(req.body?.language);
+    const shooter = Number(req.body?.shooter);
+    const keeper = Number(req.body?.keeper);
+    const phase = String(req.body?.phase || 'result');
+    const hasShot = Number.isFinite(shooter);
+    const hasSave = Number.isFinite(keeper);
+    const isResolvedPhase = phase === 'result' && hasShot && hasSave;
+    const isGoal = hasShot && hasSave && shooter > 0 && shooter >= keeper;
+    const missed = shooter === 0;
+    const result = hasShot && hasSave ? (missed ? 'missed' : isGoal ? 'goal' : 'saved') : 'pending';
+    const instruction = [
+      'Generate one football radio commentary line for a dice mini-game.',
+      `Output language must be ${language === 'en' ? 'English' : 'Simplified Chinese'}.`,
+      'The dice values are action strength values only. Never treat a dice value as a shirt number or player number.',
+      phase === 'shoot'
+        ? 'This is only the shot phase. Describe the shooter striking the ball and the quality or danger of the shot. Do not mention the goalkeeper making a save, the ball going in, the ball missing, or the final result.'
+        : phase === 'save'
+          ? 'This is only the goalkeeper phase. Describe the goalkeeper preparing or reacting, but do not announce a final result unless both shotDiceValue and saveDiceValue are present.'
+          : 'This is the final resolved phase. Announce only the final outcome based on result. Do not repeat the shooting setup, attacking move, shot description, or earlier action. If result is saved, focus on the goalkeeper save. If result is goal, focus on the ball going in. If result is missed, focus on the shot missing.',
+      'No extra facts. Return strict JSON only.'
+    ].join(' ');
+
+    try {
+      const response = await postChatCompletion(setting, {
+        model: setting.model,
+        temperature: 0.95,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a passionate football radio commentator. Return strict JSON only: {"text":"one coherent radio commentary line"}. Do not imitate any specific real person. Be vivid, spontaneous, and meaningful.'
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              language,
+              phase,
+              shotDiceValue: isResolvedPhase ? shooter : null,
+              saveDiceValue: isResolvedPhase ? keeper : null,
+              result: isResolvedPhase ? result : 'pending',
+              instruction
+            })
+          }
+        ]
+      }, 12000);
+      const parsed = extractJson(response.data?.choices?.[0]?.message?.content || '');
+      const text = String(parsed?.text || '').trim();
+      if (['intro', 'shoot', 'save'].includes(phase) && /(进球|球进|破门|入网|扑出|扑救|打飞|miss|goal|saved|save)/i.test(text)) {
+        return res.json({ enabled: false });
+      }
+      if (['intro', 'shoot', 'save'].includes(phase) && /(?:骰子|点数|掷出|摇出|得到|投出|rolled|dice|value|number|[0-6])/.test(text)) {
+        return res.json({ enabled: false });
+      }
+      return res.json({ enabled: Boolean(text), text });
+    } catch (error) {
+      console.error('Dice commentary failed:', error);
+      return res.json({ enabled: false });
+    }
+  }
+
   static async getSettings(req: AuthRequest, res: Response) {
     const effectiveSetting = await getEffectiveLLMSetting(req.user!.id);
     const setting = effectiveSetting.setting;
@@ -251,12 +381,14 @@ export class LLMController {
       apiBaseUrl: setting.apiBaseUrl,
       model: effectiveSetting.source === 'global' ? `${setting.model} (全局)` : setting.model,
       voiceEnabled: setting.voiceEnabled,
+      thinkingEnabled: setting.thinkingEnabled,
+      reasoningEffort: setting.reasoningEffort || '',
       hasApiKey: !!setting.apiKey
     } : null);
   }
 
   static async saveSettings(req: AuthRequest, res: Response) {
-    const { apiBaseUrl, apiKey, model, voiceEnabled } = req.body;
+    const { apiBaseUrl, apiKey, model, voiceEnabled, thinkingEnabled, reasoningEffort } = req.body;
     if (!apiBaseUrl || !model) return res.status(400).json({ error: 'API 地址和模型不能为空' });
     const repository = AppDataSource.getRepository(LLMSetting);
     let setting = await repository.findOne({ where: { user: { id: req.user!.id }, isGlobal: false }, relations: ['user'] });
@@ -266,10 +398,12 @@ export class LLMController {
     setting.apiBaseUrl = normalizeApiBaseUrl(String(apiBaseUrl));
     setting.model = String(model);
     setting.voiceEnabled = !!voiceEnabled;
+    setting.thinkingEnabled = !!thinkingEnabled;
+    setting.reasoningEffort = setting.thinkingEnabled ? normalizeReasoningEffort(reasoningEffort) || undefined : undefined;
     if (apiKey) setting.apiKey = encrypt(String(apiKey));
     if (!setting.apiKey) return res.status(400).json({ error: 'API Key 不能为空' });
     await repository.save(setting);
-    res.json({ apiBaseUrl: setting.apiBaseUrl, model: setting.model, voiceEnabled: setting.voiceEnabled, hasApiKey: true });
+    res.json({ apiBaseUrl: setting.apiBaseUrl, model: setting.model, voiceEnabled: setting.voiceEnabled, thinkingEnabled: setting.thinkingEnabled, reasoningEffort: setting.reasoningEffort || '', hasApiKey: true });
   }
 
   static async getGlobalSettings(_req: Request, res: Response) {
@@ -278,19 +412,23 @@ export class LLMController {
       apiBaseUrl: setting.apiBaseUrl,
       model: setting.model,
       voiceEnabled: setting.voiceEnabled,
+      thinkingEnabled: setting.thinkingEnabled,
+      reasoningEffort: setting.reasoningEffort || '',
       isGlobalEnabled: setting.isGlobalEnabled,
       hasApiKey: !!setting.apiKey
     } : {
       apiBaseUrl: 'https://api.openai.com/v1',
       model: 'gpt-4o-mini',
       voiceEnabled: false,
+      thinkingEnabled: false,
+      reasoningEffort: '',
       isGlobalEnabled: false,
       hasApiKey: false
     });
   }
 
   static async saveGlobalSettings(req: Request, res: Response) {
-    const { apiBaseUrl, apiKey, model, voiceEnabled, isGlobalEnabled } = req.body;
+    const { apiBaseUrl, apiKey, model, voiceEnabled, thinkingEnabled, reasoningEffort, isGlobalEnabled } = req.body;
     if (!apiBaseUrl || !model) return res.status(400).json({ error: 'API 地址和模型不能为空' });
     const repository = AppDataSource.getRepository(LLMSetting);
     let setting = await repository.findOne({ where: { isGlobal: true } });
@@ -301,6 +439,8 @@ export class LLMController {
     setting.apiBaseUrl = normalizeApiBaseUrl(String(apiBaseUrl));
     setting.model = String(model);
     setting.voiceEnabled = !!voiceEnabled;
+    setting.thinkingEnabled = !!thinkingEnabled;
+    setting.reasoningEffort = setting.thinkingEnabled ? normalizeReasoningEffort(reasoningEffort) || undefined : undefined;
     if (apiKey) setting.apiKey = encrypt(String(apiKey));
     if (setting.isGlobalEnabled && !setting.apiKey) return res.status(400).json({ error: '开启全局 AI 时 API Key 不能为空' });
     await repository.save(setting);
@@ -308,6 +448,8 @@ export class LLMController {
       apiBaseUrl: setting.apiBaseUrl,
       model: setting.model,
       voiceEnabled: setting.voiceEnabled,
+      thinkingEnabled: setting.thinkingEnabled,
+      reasoningEffort: setting.reasoningEffort || '',
       isGlobalEnabled: setting.isGlobalEnabled,
       hasApiKey: !!setting.apiKey
     });
@@ -407,7 +549,7 @@ export class LLMController {
 
     let narration: any = {};
     try {
-      const response = await axios.post(`${normalizeApiBaseUrl(setting.apiBaseUrl)}/chat/completions`, {
+      const response = await postChatCompletion(setting, {
         model: setting.model,
         temperature: 0.75,
         messages: [
@@ -426,33 +568,41 @@ export class LLMController {
                 away: session.awayScore + engineResult.scoreDelta.away
               },
               decidedEvents: engineResult.events,
-              home: session.homePlan,
-              away: session.awayPlan,
-              recentEvents: (session.events || []).slice(-12)
+              home: sessionLanguage === 'zh' ? withChineseBroadcastNames(session.homePlan) : session.homePlan,
+              away: sessionLanguage === 'zh' ? withChineseBroadcastNames(session.awayPlan) : session.awayPlan,
+              recentEvents: (session.events || []).slice(-12),
+              recentBroadcastTexts: (session.events || []).slice(-8).map((event: any) => event.broadcastText || event.text).filter(Boolean)
             })
           }
         ]
-      }, {
-        headers: { Authorization: `Bearer ${decrypt(setting.apiKey || '')}` },
-        timeout: 30000
-      });
+      }, Number(process.env.LLM_MATCH_STEP_TIMEOUT_MS || 10000));
       narration = extractJson(response.data?.choices?.[0]?.message?.content || '');
     } catch (error) {
       console.error('AI duel narration failed, using engine text:', error);
     }
 
     const llmTexts = new Map<number, string>();
+    const llmBroadcastTexts = new Map<number, string>();
     if (Array.isArray(narration.events)) {
       narration.events.forEach((event: any) => {
         const index = Number(event.index);
         if (Number.isInteger(index) && event.text) llmTexts.set(index, String(event.text));
+        if (Number.isInteger(index) && event.broadcastText) llmBroadcastTexts.set(index, String(event.broadcastText));
       });
     }
 
     session.currentMinute = engineResult.nextMinute;
     session.homeScore += engineResult.scoreDelta.home;
     session.awayScore += engineResult.scoreDelta.away;
-    session.events = [...(session.events || []), ...engineResult.events.map((event, index) => ({ ...event, text: llmTexts.get(index) || event.text }))];
+    const visibleEvents = engineResult.events
+      .map((event, index) => {
+        const text = llmTexts.get(index);
+        const broadcastText = llmBroadcastTexts.get(index);
+        if (event.type === 'commentary' && !text && !broadcastText) return null;
+        return { ...event, text: text || event.text, broadcastText };
+      })
+      .filter(Boolean);
+    session.events = [...(session.events || []), ...visibleEvents];
     session.statistics = mergeStatistics(session.statistics, engineResult.statisticsDelta || {});
     session.engineState = engineResult.engineState;
     session.status = engineResult.nextMinute >= 90 ? 'finished' : 'running';

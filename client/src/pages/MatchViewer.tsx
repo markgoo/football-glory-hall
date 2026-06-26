@@ -50,7 +50,13 @@ const eventText = (event: any, match: Match | undefined, language: 'zh' | 'en') 
 };
 
 const displayPlayerName = (player: any, language: 'zh' | 'en') => {
-  if (language === 'zh') return player?.nameZh || player?.name || player?.nameEn || '';
+  if (language === 'zh') {
+    if (player?.nameZh) return player.nameZh;
+    const raw = String(player?.name || player?.nameEn || '').trim();
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const surname = parts.length > 1 ? parts[parts.length - 1] : raw;
+    return player?.number ? `${player.number}号 ${surname}` : surname;
+  }
   return player?.nameEn || player?.name || player?.nameZh || '';
 };
 

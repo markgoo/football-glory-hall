@@ -52,8 +52,8 @@ const ensureDefaultLLMPrompts = async () => {
       title: 'AI 对决推进',
       titleEn: 'AI Duel Step',
       isActive: true,
-      content: '你是足球比赛模拟解说引擎。请严格返回 JSON，不要 Markdown。根据系统已经决定的事件，把下一段比赛润色成拟真的足球文字直播。',
-      contentEn: 'You are a football match simulation commentary engine. Return strict JSON only, no Markdown. Polish the system-decided events into realistic football live commentary.'
+      content: '你是足球比赛模拟解说引擎。请严格返回 JSON，不要 Markdown。根据系统已经决定的事件，把下一段比赛润色成拟真的足球文字直播。同时为每个事件写连贯、有意义、有现场感的 broadcastText。',
+      contentEn: 'You are a football match simulation commentary engine. Return strict JSON only, no Markdown. Polish the system-decided events into realistic football live text. Also write a coherent, meaningful radio-style broadcastText for each event.'
     },
     {
       key: 'match_summary',

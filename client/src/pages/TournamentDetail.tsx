@@ -18,7 +18,7 @@ type ManualRollSession = { targetDie: number; clicks: number; currentTick: numbe
 type PenaltyKick = { side: ManualSideKey; shooter?: number; keeper?: number; goal?: boolean };
 type BracketColumn = { title: string; matches: Match[] };
 type ChampionInfo = { name: string; source: 'official' | 'final' };
-type AIMatchSession = { id: string; durationMinutes: number; status: 'ready' | 'running' | 'finished' | 'saved'; currentMinute: number; homeScore: number; awayScore: number; homePlan?: any; awayPlan?: any; events?: Array<{ minute: number; type: string; team: string; player?: string; key?: boolean; text: string }>; statistics?: any; engineState?: any; model?: string };
+type AIMatchSession = { id: string; durationMinutes: number; status: 'ready' | 'running' | 'finished' | 'saved'; currentMinute: number; homeScore: number; awayScore: number; homePlan?: any; awayPlan?: any; events?: Array<{ minute: number; type: string; team: string; player?: string; key?: boolean; text: string; broadcastText?: string }>; statistics?: any; engineState?: any; model?: string };
 type AIMatchEvent = NonNullable<AIMatchSession['events']>[number];
 type AIInteractiveEvent = { minute: number; team: ManualSideKey; player?: string; text: string };
 type SyncRealResult = { ok: boolean; updatedCount?: number; provider?: string; fixtureCount?: number; completedFixtureCount?: number; leagueId?: number; leagueName?: string; searchedLeagueIds?: number[]; unmatchedMatches?: string[]; error?: string };
@@ -157,8 +157,18 @@ const formatAIMatchClock = (value: number) => {
   const second = Math.floor((value - minute) * 60);
   return `${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
 };
+const formatPlayerDisplayName = (player: any, language: 'zh' | 'en' = 'zh', fallback = '球员') => {
+  if (language === 'en') return player?.nameEn || player?.name || player?.nameZh || fallback;
+  if (player?.nameZh) return player.nameZh;
+  const raw = String(player?.name || player?.nameEn || '').trim();
+  if (!raw) return fallback;
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const surname = parts.length > 1 ? parts[parts.length - 1] : raw;
+  return player?.number ? `${player.number}号 ${surname}` : surname;
+};
 const formatAIEventText = (text?: string, event?: { team?: string; player?: string }, session?: AIMatchSession | null) => {
-  let value = String(text || '').replace(/^上帝摇骰子判定[:：]\s*/, '');
+  let value = cleanDiceNarrationText(text)
+    .replace(/^上帝摇骰子判定[:：]\s*/, '');
   const playerName = event?.player;
   if (!playerName || /\d+号/.test(playerName)) return value;
   const plan = event?.team === 'away' ? session?.awayPlan : event?.team === 'home' ? session?.homePlan : undefined;
@@ -168,64 +178,61 @@ const formatAIEventText = (text?: string, event?: { team?: string; player?: stri
   }
   return value;
 };
-const getAIPlayerBroadcastName = (event?: { team?: string; player?: string }, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
-  const playerName = String(event?.player || '').trim();
-  if (!playerName) return language === 'en' ? 'The player' : '这名球员';
-  const plan = event?.team === 'away' ? session?.awayPlan : event?.team === 'home' ? session?.homePlan : undefined;
-  const player = Array.isArray(plan?.lineup) ? plan.lineup.find((item: any) => item.name === playerName) : undefined;
-  if (player?.number) return language === 'en' ? `Number ${player.number}, ${playerName}` : `${player.number}号，${player.number}号${playerName}`;
-  return playerName;
-};
-const getAITeamBroadcastName = (event?: { team?: string }, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
-  const team = event?.team === 'away' ? session?.awayPlan?.teamName : event?.team === 'home' ? session?.homePlan?.teamName : '';
-  return team || (language === 'en' ? 'the attacking side' : '进攻方');
-};
-const compactAIText = (text?: string, maxLength = 28) => {
-  const first = String(text || '')
+const cleanDiceNarrationText = (text?: string) => String(text || '')
     .replace(/^上帝摇骰子判定[:：]\s*/, '')
-    .split(/[。！？.!?]/)[0]
-    .replace(/第?\d+['’分钟\s，,：:]*/g, '')
+    .replace(/。?射门\s*\d+，扑救\s*\d+，(?:门将扑出|皮球入网|射门打飞)。?/g, '')
+    .replace(/\.?\s*Shot\s*\d+,\s*save\s*\d+,\s*(?:the shot flies wide|the ball is in|the goalkeeper saves it)\.?/gi, '')
     .trim();
-  return first.length > maxLength ? `${first.slice(0, maxLength)}...` : first;
+const cleanAIScoreText = (text: string, session?: AIMatchSession | null) => {
+  if (!session) return text;
+  const scoreText = `${session.homeScore}比${session.awayScore}`;
+  return text
+    .replace(/\d+\s*比\s*\d+/g, scoreText)
+    .replace(/比分(?:变为|来到|是)?\s*\d+\s*[-:：]\s*\d+/g, `比分${session.homeScore}-${session.awayScore}`)
+    .replace(/score(?: is| becomes| now)?\s*\d+\s*[-:]\s*\d+/gi, `score is ${session.homeScore}-${session.awayScore}`);
 };
 const formatAIBroadcastText = (event?: AIMatchEvent, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
   if (!event) return language === 'en' ? 'The booth is waiting for kickoff.' : '解说席正在连线，等待开球哨响。';
-  const player = getAIPlayerBroadcastName(event, session, language);
-  const team = getAITeamBroadcastName(event, session, language);
-  if (language === 'en') {
-    if (event.type === 'goal') return `${player}! Goal! The net shakes.`;
-    if (event.type === 'chance') return `${player}, into the box... shot coming!`;
-    if (event.type === 'save') return `${player} shoots... saved by the keeper!`;
-    if (event.type === 'penalty') return `${team} win a penalty! Big moment.`;
-    if (event.type === 'card') return `${player}, late challenge. The card is out.`;
-    if (event.type === 'injury') return `${player} is down. Play stops.`;
-    return compactAIText(event.text, 48) || `${team} slow it down in midfield.`;
-  }
-  if (event.type === 'goal') return `${player}！打门！球进了！`;
-  if (event.type === 'chance') return `${player}，突入禁区，机会来了！`;
-  if (event.type === 'save') return `${player}起脚，哎呀，被门将挡出！`;
-  if (event.type === 'penalty') return `${team}，点球！这下紧张了。`;
-  if (event.type === 'card') return `${player}动作大了，裁判掏牌。`;
-  if (event.type === 'injury') return `${player}倒地了，比赛暂停。`;
-  return compactAIText(event.text) || `${team}控一下节奏。`;
+  if (event.broadcastText) return cleanAIScoreText(cleanDiceNarrationText(event.broadcastText), session);
+  return cleanAIScoreText(formatAIEventText(event.text, event, session), session);
 };
 const isUrgentAIEvent = (event?: AIMatchEvent) => ['goal', 'penalty', 'card', 'injury'].includes(event?.type || '');
+const isPendingInteractiveAIEvent = (event?: AIMatchEvent) => event?.type === 'chance' || event?.type === 'penalty';
 const formatAIUrgentBroadcastText = (event?: AIMatchEvent, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
   if (!event) return '';
-  const player = getAIPlayerBroadcastName(event, session, language);
-  const team = getAITeamBroadcastName(event, session, language);
-  if (language === 'en') {
-    if (event.type === 'goal') return `Goal! Goal! ${player} scores!`;
-    if (event.type === 'penalty') return `Penalty! ${team} have a penalty!`;
-    if (event.type === 'card') return `Card shown! ${player} is in trouble!`;
-    if (event.type === 'injury') return `Stop, stop. ${player} is down.`;
-    return formatAIBroadcastText(event, session, language);
-  }
-  if (event.type === 'goal') return `进球啦！进球啦！${player}，球进了！`;
-  if (event.type === 'penalty') return `点球！${team}获得点球！`;
-  if (event.type === 'card') return `出牌了！${player}，裁判掏牌！`;
-  if (event.type === 'injury') return `停一下，${player}倒地了！`;
+  if (event.broadcastText) return cleanAIScoreText(String(event.broadcastText).trim(), session);
   return formatAIBroadcastText(event, session, language);
+};
+const splitVoiceText = (text: string, language: 'zh' | 'en') => {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  const maxLength = language === 'en' ? 130 : 48;
+  const sentenceParts = normalized.match(/[^。！？!?]+[。！？!?]?/g) || [normalized];
+  const parts: string[] = [];
+
+  sentenceParts.forEach(sentence => {
+    const value = sentence.trim();
+    if (!value) return;
+    if (value.length <= maxLength) {
+      parts.push(value);
+      return;
+    }
+
+    const clauses = value.split(/(?<=[，,；;：:])\s*/).filter(Boolean);
+    let buffer = '';
+    clauses.forEach(clause => {
+      const next = `${buffer}${clause}`.trim();
+      if (next.length > maxLength && buffer) {
+        parts.push(buffer.trim());
+        buffer = clause;
+      } else {
+        buffer = next;
+      }
+    });
+    if (buffer.trim()) parts.push(buffer.trim());
+  });
+
+  return parts.length ? parts : [normalized];
 };
 const emptyManualGame = (): ManualGame => ({ firstHalf: {}, secondHalf: {} });
 const getPenaltyScore = (kicks: PenaltyKick[], side: ManualSideKey) => kicks.filter(kick => kick.side === side && kick.goal).length;
@@ -478,7 +485,7 @@ const TournamentDetail: React.FC = () => {
   const [penaltyDiceOpen, setPenaltyDiceOpen] = useState(false);
   const [aiMatch, setAiMatch] = useState<Match | null>(null);
   const [aiSession, setAiSession] = useState<AIMatchSession | null>(null);
-  const [aiDuration, setAiDuration] = useState(8);
+  const [aiDuration, setAiDuration] = useState(6);
   const [aiRunning, setAiRunning] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiFinishing, setAiFinishing] = useState(false);
@@ -487,9 +494,13 @@ const TournamentDetail: React.FC = () => {
   const [aiPenaltyKicks, setAiPenaltyKicks] = useState<PenaltyKick[]>([]);
   const [aiPenaltyDiceOpen, setAiPenaltyDiceOpen] = useState(false);
   const [aiInteractiveEvent, setAiInteractiveEvent] = useState<AIInteractiveEvent | null>(null);
+  const [aiAutoShotResolution, setAiAutoShotResolution] = useState(false);
+  const aiAutoShotResolutionRef = useRef(false);
   const aiHalftimeResolver = useRef<(() => void) | null>(null);
   const aiInteractiveResolver = useRef<((result?: { shooter: number; keeper: number }) => void) | null>(null);
   const aiRunTokenRef = useRef(0);
+  const aiVoiceQueueRef = useRef<Array<{ text: string; urgent: boolean }>>([]);
+  const aiVoicePlayingRef = useRef(false);
   const manualRollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const manualRollSessions = useRef<Record<string, ManualRollSession>>({});
   const [query, setQuery] = useState('');
@@ -530,6 +541,7 @@ const TournamentDetail: React.FC = () => {
   };
   useEffect(() => { fetchTournament(); }, [id]);
   useEffect(() => () => clearAllManualRollTimers(), []);
+  useEffect(() => { aiAutoShotResolutionRef.current = aiAutoShotResolution; }, [aiAutoShotResolution]);
   useEffect(() => {
     if (!favoriteStorageKey) return;
     const saved = localStorage.getItem(favoriteStorageKey);
@@ -639,24 +651,61 @@ const TournamentDetail: React.FC = () => {
   const speakAIEvents = (session: AIMatchSession, previousEventCount: number) => {
     if (!aiVoiceEnabled || !('speechSynthesis' in window)) return;
     const newEvents = (session.events || []).slice(previousEventCount);
-    const urgentEvents = newEvents.filter(isUrgentAIEvent);
-    const text = (urgentEvents.length > 0 ? urgentEvents : newEvents)
-      .map(event => urgentEvents.length > 0 ? formatAIUrgentBroadcastText(event, session, language) : formatAIBroadcastText(event, session, language))
-      .join(language === 'en' ? '. ' : '。');
+    const latestEvent = newEvents[newEvents.length - 1];
+    if (!latestEvent) return;
+    const urgent = isUrgentAIEvent(latestEvent);
+    const text = urgent ? formatAIUrgentBroadcastText(latestEvent, session, language) : formatAIBroadcastText(latestEvent, session, language);
     if (!text) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
+    enqueueAIVoice(text, urgent ? 'priority' : 'queue');
+  };
+  const playNextAIVoice = () => {
+    if (!('speechSynthesis' in window) || aiVoicePlayingRef.current) return;
+    const next = aiVoiceQueueRef.current.shift();
+    if (!next) return;
+    aiVoicePlayingRef.current = true;
+    const utterance = new SpeechSynthesisUtterance(next.text);
     utterance.lang = language === 'en' ? 'en-US' : 'zh-CN';
-    utterance.rate = urgentEvents.length > 0 ? 1.28 : 1.18;
-    utterance.pitch = urgentEvents.length > 0 ? 1.32 : 1.12;
+    utterance.rate = next.urgent ? 1.38 : 1.28;
+    utterance.pitch = next.urgent ? 1.32 : 1.12;
     utterance.volume = 1;
+    utterance.onend = () => {
+      aiVoicePlayingRef.current = false;
+      playNextAIVoice();
+    };
+    utterance.onerror = () => {
+      aiVoicePlayingRef.current = false;
+      playNextAIVoice();
+    };
     window.speechSynthesis.speak(utterance);
   };
+  const enqueueAIVoice = (text: string, mode: 'queue' | 'priority' | 'interrupt' = 'queue') => {
+    if (!aiVoiceEnabled || !('speechSynthesis' in window) || !text) return;
+    const segments = splitVoiceText(text, language).map(segment => ({ text: segment, urgent: mode !== 'queue' }));
+    if (segments.length === 0) return;
+    if (mode === 'interrupt') {
+      aiVoiceQueueRef.current = [];
+      aiVoicePlayingRef.current = false;
+      window.speechSynthesis.cancel();
+      aiVoiceQueueRef.current.push(...segments);
+    } else if (mode === 'priority') {
+      aiVoiceQueueRef.current = segments;
+    } else {
+      aiVoiceQueueRef.current = segments;
+    }
+    playNextAIVoice();
+  };
+  const stopAIVoice = () => {
+    aiVoiceQueueRef.current = [];
+    aiVoicePlayingRef.current = false;
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  };
+  const rollAIShotDie = () => Math.floor(Math.random() * 7);
+  const rollAISaveDie = () => Math.floor(Math.random() * 6) + 1;
   const openAIMatch = async (match: Match) => {
     aiRunTokenRef.current += 1;
     setAiMatch(match);
     setAiSession(null);
-    setAiDuration(8);
+    setAiDuration(6);
     setAiRunning(false);
     setAiSaving(false);
     setAiFinishing(false);
@@ -664,6 +713,8 @@ const TournamentDetail: React.FC = () => {
     setAiPenaltyKicks([]);
     setAiPenaltyDiceOpen(false);
     setAiInteractiveEvent(null);
+    setAiAutoShotResolution(false);
+    aiAutoShotResolutionRef.current = false;
     setAiVoiceEnabled(true);
   };
   const startAIDuel = async () => {
@@ -676,34 +727,42 @@ const TournamentDetail: React.FC = () => {
       let current = created.data as AIMatchSession;
       let halftimeHandled = false;
       setAiSession(current);
-      const intervalMs = Math.max(250, Math.round((aiDuration * 60 * 1000) / (AI_MATCH_TOTAL_MINUTES / 5)));
+      const segmentMinutes = current.engineState?.segmentMinutes || 5;
+      const intervalMs = Math.max(250, Math.round((aiDuration * 60 * 1000) / (AI_MATCH_TOTAL_MINUTES / segmentMinutes)));
       while (current.status !== 'finished' && current.status !== 'saved') {
         if (aiRunTokenRef.current !== runToken) return;
         const previousEventCount = current.events?.length || 0;
+        const stepStartedAt = Date.now();
         const response = await llmAPI.stepSession(current.id);
         if (aiRunTokenRef.current !== runToken) return;
         current = response.data as AIMatchSession;
         setAiSession(current);
-        speakAIEvents(current, previousEventCount);
-        const interactiveEvent = (current.events || []).slice(previousEventCount).find(event => {
-          const text = event.text || '';
-          const alreadyResolved = /破门|进球|入网|得分|比分变为|改写比分/.test(text);
-          return event.type !== 'goal' && !alreadyResolved && (['chance', 'save', 'penalty'].includes(event.type) || /射门|扑救|单刀|远射|头球|点球/.test(text));
-        });
+        const interactiveEvent = (current.events || []).slice(previousEventCount).find(event => event.type === 'chance' || event.type === 'penalty');
         if (interactiveEvent) {
           const team: ManualSideKey = interactiveEvent.team === 'away' ? 'away' : 'home';
-          setAiInteractiveEvent({ minute: interactiveEvent.minute, team, player: interactiveEvent.player, text: interactiveEvent.text });
-          setAiRunning(false);
-          const diceResult = await new Promise<{ shooter: number; keeper: number } | undefined>(resolve => { aiInteractiveResolver.current = resolve; });
+          const autoShotResolution = aiAutoShotResolutionRef.current;
+          if (!autoShotResolution) {
+            stopAIVoice();
+            setAiInteractiveEvent({ minute: interactiveEvent.minute, team, player: interactiveEvent.player, text: interactiveEvent.text });
+            setAiRunning(false);
+          }
+          const diceResult = autoShotResolution
+            ? { shooter: rollAIShotDie(), keeper: rollAISaveDie() }
+            : await new Promise<{ shooter: number; keeper: number } | undefined>(resolve => { aiInteractiveResolver.current = resolve; });
           if (aiRunTokenRef.current !== runToken) return;
-          setAiInteractiveEvent(null);
-          setAiRunning(true);
+          if (!autoShotResolution) {
+            setAiInteractiveEvent(null);
+            setAiRunning(true);
+          }
           if (diceResult) {
             const goal = diceResult.shooter > 0 && diceResult.shooter >= diceResult.keeper;
-            const cleanText = interactiveEvent.text.replace(new RegExp(`^第?${interactiveEvent.minute}['’分钟\\s，,：:]*`), '');
+            const cleanText = interactiveEvent.text
+              .replace(new RegExp(`^第?${interactiveEvent.minute}['’分钟\\s，,：:]*`), '')
+              .replace(/[。.!！?？\s]+$/, '');
             const feedbackText = language === 'en'
-              ? `God dice decision: ${cleanText}. Shot ${diceResult.shooter}, save ${diceResult.keeper}, ${diceResult.shooter === 0 ? 'the shot flies wide' : goal ? 'the ball is in' : 'the goalkeeper saves it'}.`
-              : `上帝摇骰子判定：${cleanText}。射门 ${diceResult.shooter}，扑救 ${diceResult.keeper}，${diceResult.shooter === 0 ? '射门打飞' : goal ? '皮球入网' : '门将扑出'}。`;
+              ? `God dice decision: ${cleanText}. ${diceResult.shooter === 0 ? 'The shot flies wide.' : goal ? 'The ball is in.' : 'The goalkeeper saves it.'}`
+              : `上帝摇骰子判定：${cleanText}。${diceResult.shooter === 0 ? '射门打飞。' : goal ? '皮球入网。' : '门将扑出。'}`;
+            const feedbackPreviousEventCount = current.events?.length || 0;
             const feedback = await llmAPI.appendSessionEvent(current.id, {
               minute: interactiveEvent.minute,
               type: goal ? 'goal' : 'save',
@@ -714,7 +773,10 @@ const TournamentDetail: React.FC = () => {
             });
             current = feedback.data as AIMatchSession;
             setAiSession(current);
+            speakAIEvents(current, feedbackPreviousEventCount);
           }
+        } else {
+          speakAIEvents(current, previousEventCount);
         }
         if (!halftimeHandled && current.currentMinute >= 45 && current.status !== 'finished') {
           halftimeHandled = true;
@@ -723,7 +785,7 @@ const TournamentDetail: React.FC = () => {
           if (aiVoiceEnabled && 'speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(language === 'en' ? 'The first half is over. The players head back to the dressing rooms. We will continue after halftime.' : '上半场比赛结束，双方球员回到更衣室，中场休息后我们继续。');
             utterance.lang = language === 'en' ? 'en-US' : 'zh-CN';
-            utterance.rate = 1.12;
+            utterance.rate = 1.22;
             utterance.pitch = 1.08;
             window.speechSynthesis.speak(utterance);
           }
@@ -732,7 +794,7 @@ const TournamentDetail: React.FC = () => {
           setAiHalftimePaused(false);
           setAiRunning(true);
         }
-        if (current.status !== 'finished') await wait(intervalMs);
+        if (current.status !== 'finished') await wait(Math.max(0, intervalMs - (Date.now() - stepStartedAt)));
       }
     } catch (error: any) {
       alert(error.response?.data?.error || error.message || 'AI 对决失败');
@@ -931,6 +993,7 @@ const TournamentDetail: React.FC = () => {
   };
   const openPenaltyDice = () => {
     if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     setPenaltyDiceOpen(true);
   };
   const completeManualPenaltyKick = (shooter: number, keeper: number) => {
@@ -1104,7 +1167,7 @@ const TournamentDetail: React.FC = () => {
       </div>
       {manualMatch && <ManualMatchModal match={manualMatch} game={manualGame} submitting={submittingManual} complete={manualReadyToSave} normalComplete={manualGameComplete} needsPenalty={manualNeedsPenalty} penaltyComplete={penaltyComplete} penaltyKicks={penaltyKicks} penaltyDiceOpen={penaltyDiceOpen} rollingCount={manualRollingCount} rollAllUsed={manualRollAllUsed} anyRollStarted={manualAnyRollStarted} autoSubmit={manualAutoSubmit} saved={manualSaved} onClose={() => { clearAllManualRollTimers(); setManualAutoSubmit(false); setManualRollAllUsed(false); setManualSaved(false); setPenaltyKicks([]); setPenaltyDiceOpen(false); setManualMatch(null); }} onRoll={rollManualSide} onRollAll={rollAllManualSides} onRequestLanding={requestManualLanding} onPenaltyRoll={autoCompletePenaltyShootout} onPenaltyManualRoll={openPenaltyDice} onPenaltyDiceClose={() => setPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeManualPenaltyKick(shooter, keeper); setPenaltyDiceOpen(false); }} onSubmit={submitManualMatch} getScore={getManualScore} />}
       {syncRealResult && <SyncRealResultModal result={syncRealResult} onClose={() => setSyncRealResult(null)} />}
-      {aiMatch && <AIMatchModal match={aiMatch} session={aiSession} duration={aiDuration} running={aiRunning} saving={aiSaving} finishing={aiFinishing} voiceEnabled={aiVoiceEnabled} halftimePaused={aiHalftimePaused} interactiveEvent={aiInteractiveEvent} penaltyKicks={aiPenaltyKicks} penaltyDiceOpen={aiPenaltyDiceOpen} isAdmin={user?.role === 'admin'} onDurationChange={setAiDuration} onVoiceChange={setAiVoiceEnabled} onContinueSecondHalf={continueAISecondHalf} onInteractiveDiceClose={() => { aiInteractiveResolver.current?.(); aiInteractiveResolver.current = null; setAiInteractiveEvent(null); setAiRunning(true); }} onInteractiveDiceComplete={(shooter, keeper) => { aiInteractiveResolver.current?.({ shooter, keeper }); aiInteractiveResolver.current = null; }} onStart={startAIDuel} onFinish={finishAIDuel} onSave={saveAIDuel} onPenaltyRoll={autoCompleteAIPenaltyShootout} onPenaltyManualRoll={() => setAiPenaltyDiceOpen(true)} onPenaltyDiceClose={() => setAiPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeAIPenaltyKick(shooter, keeper); setAiPenaltyDiceOpen(false); }} onClose={() => { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); aiHalftimeResolver.current?.(); aiInteractiveResolver.current?.(); aiHalftimeResolver.current = null; aiInteractiveResolver.current = null; setAiMatch(null); setAiSession(null); setAiRunning(false); setAiHalftimePaused(false); setAiInteractiveEvent(null); setAiPenaltyKicks([]); setAiPenaltyDiceOpen(false); }} />}
+      {aiMatch && <AIMatchModal match={aiMatch} session={aiSession} duration={aiDuration} running={aiRunning} saving={aiSaving} finishing={aiFinishing} voiceEnabled={aiVoiceEnabled} autoShotResolution={aiAutoShotResolution} halftimePaused={aiHalftimePaused} interactiveEvent={aiInteractiveEvent} penaltyKicks={aiPenaltyKicks} penaltyDiceOpen={aiPenaltyDiceOpen} isAdmin={user?.role === 'admin'} onDurationChange={setAiDuration} onVoiceChange={setAiVoiceEnabled} onAutoShotResolutionChange={setAiAutoShotResolution} onContinueSecondHalf={continueAISecondHalf} onInteractiveDiceClose={() => { aiInteractiveResolver.current?.(); aiInteractiveResolver.current = null; setAiInteractiveEvent(null); setAiRunning(true); }} onInteractiveDiceComplete={(shooter, keeper) => { aiInteractiveResolver.current?.({ shooter, keeper }); aiInteractiveResolver.current = null; }} onStart={startAIDuel} onFinish={finishAIDuel} onSave={saveAIDuel} onPenaltyRoll={autoCompleteAIPenaltyShootout} onPenaltyManualRoll={() => { stopAIVoice(); setAiPenaltyDiceOpen(true); }} onPenaltyDiceClose={() => setAiPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeAIPenaltyKick(shooter, keeper); setAiPenaltyDiceOpen(false); }} onClose={() => { stopAIVoice(); aiHalftimeResolver.current?.(); aiInteractiveResolver.current?.(); aiHalftimeResolver.current = null; aiInteractiveResolver.current = null; setAiMatch(null); setAiSession(null); setAiRunning(false); setAiHalftimePaused(false); setAiInteractiveEvent(null); setAiPenaltyKicks([]); setAiPenaltyDiceOpen(false); }} />}
       <FloatingScrollToolbar onTop={scrollToPageTop} onBottom={scrollToPageBottom} onNextMatch={handleJumpToNextScheduledMatch} hasNextMatch={Boolean(nextScheduledMatch)} />
     </div>
   );
@@ -1470,6 +1533,7 @@ const PlanPanel: React.FC<{ title: string; plan?: any }> = ({ title, plan }) => 
 );
 
 const LineupPanel: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string; awayName?: string }> = ({ homePlan, awayPlan, homeName, awayName }) => {
+  const { language } = useI18n();
   const renderLineup = (plan: any, side: 'home' | 'away') => {
     const lineup = plan?.lineup || [];
     if (lineup.length === 0) {
@@ -1481,7 +1545,7 @@ const LineupPanel: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string;
         {lineup.map((player: any, index: number) => (
           <div key={`${side}-lineup-${player.number || index}-${player.name || index}`} className="flex items-center gap-2 rounded bg-white px-2 py-1.5 text-sm shadow-sm">
             <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${side === 'home' ? 'bg-blue-700' : 'bg-red-700'}`}>{player.number || index + 1}</span>
-            <span className="min-w-0 flex-1 truncate font-medium text-gray-900">{player.name || `球员 ${index + 1}`}</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-gray-900">{formatPlayerDisplayName(player, language, `球员 ${index + 1}`)}</span>
             <span className="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{player.position || '-'}</span>
           </div>
         ))}
@@ -1523,6 +1587,7 @@ const AIMatchModal: React.FC<{
   saving: boolean;
   finishing: boolean;
   voiceEnabled: boolean;
+  autoShotResolution: boolean;
   halftimePaused: boolean;
   interactiveEvent: AIInteractiveEvent | null;
   penaltyKicks: PenaltyKick[];
@@ -1530,6 +1595,7 @@ const AIMatchModal: React.FC<{
   isAdmin: boolean;
   onDurationChange: (value: number) => void;
   onVoiceChange: (value: boolean) => void;
+  onAutoShotResolutionChange: (value: boolean) => void;
   onContinueSecondHalf: () => void;
   onInteractiveDiceClose: () => void;
   onInteractiveDiceComplete: (shooter: number, keeper: number) => void;
@@ -1541,15 +1607,14 @@ const AIMatchModal: React.FC<{
   onPenaltyDiceClose: () => void;
   onPenaltyDiceComplete: (shooter: number, keeper: number) => void;
   onClose: () => void;
-}> = ({ match, session, duration, running, saving, finishing, voiceEnabled, halftimePaused, interactiveEvent, penaltyKicks, penaltyDiceOpen, isAdmin, onDurationChange, onVoiceChange, onContinueSecondHalf, onInteractiveDiceClose, onInteractiveDiceComplete, onStart, onFinish, onSave, onPenaltyRoll, onPenaltyManualRoll, onPenaltyDiceClose, onPenaltyDiceComplete, onClose }) => {
+}> = ({ match, session, duration, running, saving, finishing, voiceEnabled, autoShotResolution, halftimePaused, interactiveEvent, penaltyKicks, penaltyDiceOpen, isAdmin, onDurationChange, onVoiceChange, onAutoShotResolutionChange, onContinueSecondHalf, onInteractiveDiceClose, onInteractiveDiceComplete, onStart, onFinish, onSave, onPenaltyRoll, onPenaltyManualRoll, onPenaltyDiceClose, onPenaltyDiceComplete, onClose }) => {
   const { language } = useI18n();
   const durations = [0.5, 1, 2, 4, 6, 8, 16, 20, 45, 90];
   const formatDurationOption = (value: number) => value < 1 ? '30秒' : `${value}分钟`;
   const finished = session?.status === 'finished';
   const needsPenalty = Boolean(finished && !match.groupName && session?.homeScore === session?.awayScore);
   const penaltyComplete = getPenaltyComplete(penaltyKicks);
-  const keyEvents = (session?.events || []).filter(event => event.key || ['goal', 'penalty', 'card', 'injury', 'chance', 'save'].includes(event.type));
-  const commentaryEvents = [...(session?.events || [])].reverse();
+  const commentaryEvents = [...(session?.events || [])].filter(event => !isPendingInteractiveAIEvent(event)).reverse();
   const latestCommentary = formatAIBroadcastText(commentaryEvents[0], session, language);
   const [displayMinute, setDisplayMinute] = useState(0);
   const [crowdEnabled, setCrowdEnabled] = useState(true);
@@ -1644,7 +1709,8 @@ const AIMatchModal: React.FC<{
   }, [session?.events]);
 
   useEffect(() => {
-    if (!crowdEnabled || (!running && !halftimePaused)) {
+    const keepCrowdAlive = running || halftimePaused || Boolean(interactiveEvent) || penaltyDiceOpen;
+    if (!crowdEnabled || !keepCrowdAlive) {
       if (crowdAudioRef.current) {
         crowdAudioRef.current.source.stop();
         crowdAudioRef.current.context.close();
@@ -1688,7 +1754,7 @@ const AIMatchModal: React.FC<{
         crowdAudioRef.current = undefined;
       }
     };
-  }, [crowdEnabled, halftimePaused, running]);
+  }, [crowdEnabled, halftimePaused, interactiveEvent, penaltyDiceOpen, running]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -1768,24 +1834,24 @@ const AIMatchModal: React.FC<{
               <PlanPanel title={`${match.homeTeam?.name || '主队'} 战术`} plan={session?.homePlan} />
               <PlanPanel title={`${match.awayTeam?.name || '客队'} 战术`} plan={session?.awayPlan} />
             </div>
-            <div className="rounded border p-4">
-              <h3 className="font-semibold text-gray-900">广播解说</h3>
-              <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-                {(session?.events || []).length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">解说席正在连线，等待开球哨响。</div>}
-                {commentaryEvents.map((event, index) => (
-                  <div key={`${event.minute}-${index}`} className={`rounded p-3 text-sm ${event.type === 'goal' ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-gray-700'}`}>
-                    <span className="font-semibold">{event.minute}'</span> {formatAIBroadcastText(event, session, language)}
-                  </div>
-                ))}
+            <div className="rounded border border-blue-100 bg-blue-50 p-3">
+              <div className="flex items-center justify-between gap-4 text-sm text-blue-950">
+                <span>
+                  <span className="font-semibold">自动判定射门</span>
+                  <span className="ml-2 text-blue-800">开启后不弹出“上帝正在掷射门骰子”，系统自动掷骰并继续比赛。</span>
+                </span>
+                <button type="button" role="switch" aria-checked={autoShotResolution} onClick={() => onAutoShotResolutionChange(!autoShotResolution)} className={`relative inline-flex h-8 w-16 flex-shrink-0 items-center rounded-full p-1 transition-colors ${autoShotResolution ? 'bg-green-500' : 'bg-gray-300'}`}>
+                  <span className={`h-6 w-6 rounded-full bg-white shadow transition-transform ${autoShotResolution ? 'translate-x-8' : 'translate-x-0'}`} />
+                </button>
               </div>
             </div>
             <div className="rounded border p-4">
-              <h3 className="font-semibold text-gray-900">文字直播</h3>
-              <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
-                {keyEvents.length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">比赛关键时刻会在这里亮起。</div>}
+              <h3 className="font-semibold text-gray-900">广播解说</h3>
+              <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+                {commentaryEvents.length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">解说席正在连线，等待开球哨响。</div>}
                 {commentaryEvents.map((event, index) => (
-                  <div key={`key-${event.minute}-${index}`} className="rounded bg-amber-50 p-3 text-sm text-amber-900">
-                    <span className="font-semibold">{event.minute}'</span> {formatAIEventText(event.text, event, session)}
+                  <div key={`${event.minute}-${index}`} className={`rounded p-3 text-sm ${event.type === 'goal' ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-gray-700'}`}>
+                    <span className="font-semibold">{event.minute}'</span> {formatAIBroadcastText(event, session, language)}
                   </div>
                 ))}
               </div>
@@ -1799,7 +1865,7 @@ const AIMatchModal: React.FC<{
             )}
             {needsPenalty && <PenaltyShootoutPanel match={match} kicks={penaltyKicks} complete={penaltyComplete} submitting={saving} saved={false} onRoll={onPenaltyRoll} onManualRoll={onPenaltyManualRoll} />}
             {penaltyDiceOpen && <PenaltyDiceModal title="AI 对决点球大战，上帝摇骰子决定射门和扑救。" onClose={onPenaltyDiceClose} onComplete={onPenaltyDiceComplete} />}
-            {interactiveEvent && <PenaltyDiceModal title="关键射门，上帝摇骰子决定射门与扑救。" onClose={onInteractiveDiceClose} onComplete={onInteractiveDiceComplete} />}
+            {interactiveEvent && <PenaltyDiceModal title="关键射门，上帝摇骰子决定射门与扑救。" description={`${interactiveEvent.minute}' ${interactiveEvent.text}`} onClose={onInteractiveDiceClose} onComplete={onInteractiveDiceComplete} />}
             {session?.statistics && (
               <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
                 <InfoCard icon={null} label="主队射门" value={String(session.statistics.homeShots || 0)} />
@@ -1933,7 +1999,8 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
   );
 };
 
-const PenaltyDiceModal: React.FC<{ title: string; onClose: () => void; onComplete: (shooter: number, keeper: number) => void }> = ({ title, onClose, onComplete }) => {
+const PenaltyDiceModal: React.FC<{ title: string; description?: string; onClose: () => void; onComplete: (shooter: number, keeper: number) => void }> = ({ title, description, onClose, onComplete }) => {
+  const { language } = useI18n();
   const [rolling, setRolling] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [shootValues, setShootValues] = useState([0, 0, 0, 0, 0, 0]);
@@ -1945,6 +2012,23 @@ const PenaltyDiceModal: React.FC<{ title: string; onClose: () => void; onComplet
   const [activePanel, setActivePanel] = useState<'shoot' | 'save'>('shoot');
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
+  const speakDiceCommentary = async (data: { phase: 'intro' | 'shoot' | 'save' | 'result'; shooter?: number; keeper?: number }) => {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      const response = await llmAPI.diceCommentary({ ...data, language });
+      const text = response.data?.text;
+      if (!response.data?.enabled || !text) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = language === 'en' ? 'en-US' : 'zh-CN';
+      utterance.rate = 1.28;
+      utterance.pitch = 1.2;
+      utterance.volume = 1;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // LLM commentary is optional for this shared dice dialog.
+    }
+  };
+
   const clearTimer = () => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
@@ -1953,6 +2037,9 @@ const PenaltyDiceModal: React.FC<{ title: string; onClose: () => void; onComplet
   };
 
   useEffect(() => () => clearTimer(), []);
+  useEffect(() => {
+    void speakDiceCommentary({ phase: 'intro' });
+  }, []);
 
   const roll = (panel: 'shoot' | 'save') => {
     if (rolling) return;
@@ -1975,10 +2062,13 @@ const PenaltyDiceModal: React.FC<{ title: string; onClose: () => void; onComplet
           setShooterDie(die);
           setShootSelectedIndex(target);
           setActivePanel('save');
+          void speakDiceCommentary({ phase: 'shoot', shooter: die });
         } else {
           setSaveValues(current => current.map((value, valueIndex) => valueIndex === target ? die : value));
           setKeeperDie(die);
           setSaveSelectedIndex(target);
+          const currentShooter = shooterDie;
+          void speakDiceCommentary({ phase: 'result', shooter: currentShooter, keeper: die });
         }
         return;
       }
@@ -2034,6 +2124,13 @@ const PenaltyDiceModal: React.FC<{ title: string; onClose: () => void; onComplet
           </div>
           <button type="button" onClick={onClose} disabled={rolling} className="text-gray-500 hover:text-gray-800 disabled:opacity-50">关闭</button>
         </div>
+        {description && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <div className="font-semibold">射门判定开始</div>
+            <p className="mt-1 leading-6">{description}</p>
+            <p className="mt-2 text-xs text-amber-800">先点击“射门”决定这脚打门质量，再点击“扑救”决定门将反应。</p>
+          </div>
+        )}
         <div className="grid gap-4 md:grid-cols-2">
           {renderBoard('射门', 'shoot', shooterDie)}
           {renderBoard('扑救', 'save', keeperDie)}

@@ -101,14 +101,16 @@ export const adminAPI = {
 
 export const llmAPI = {
   getSettings: () => api.get('/llm/settings'),
-  saveSettings: (data: { apiBaseUrl: string; apiKey?: string; model: string; voiceEnabled?: boolean }) =>
+  saveSettings: (data: { apiBaseUrl: string; apiKey?: string; model: string; voiceEnabled?: boolean; thinkingEnabled?: boolean; reasoningEffort?: string }) =>
     api.put('/llm/settings', data),
   getGlobalSettings: () => api.get('/llm/admin/global-settings'),
-  saveGlobalSettings: (data: { apiBaseUrl: string; apiKey?: string; model: string; voiceEnabled?: boolean; isGlobalEnabled?: boolean }) =>
+  saveGlobalSettings: (data: { apiBaseUrl: string; apiKey?: string; model: string; voiceEnabled?: boolean; thinkingEnabled?: boolean; reasoningEffort?: string; isGlobalEnabled?: boolean }) =>
     api.put('/llm/admin/global-settings', data),
   getPrompts: () => api.get('/llm/prompts'),
   updatePrompt: (key: string, data: { title?: string; content?: string; isActive?: boolean; language?: 'zh' | 'en' }) =>
     api.patch(`/llm/prompts/${key}`, data),
+  diceCommentary: (data: { shooter?: number; keeper?: number; phase: 'intro' | 'shoot' | 'save' | 'result'; language?: 'zh' | 'en' }) =>
+    api.post<{ enabled: boolean; text?: string }>('/llm/dice-commentary', data),
   createSession: (matchId: string, data: { durationMinutes: number; language?: 'zh' | 'en' }) =>
     api.post(`/llm/matches/${matchId}/sessions`, data),
   stepSession: (sessionId: string) => api.post(`/llm/sessions/${sessionId}/step`),

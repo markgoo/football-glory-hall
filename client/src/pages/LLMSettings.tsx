@@ -7,6 +7,8 @@ const LLMSettings: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('gpt-4o-mini');
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -19,6 +21,8 @@ const LLMSettings: React.FC = () => {
           setApiBaseUrl(response.data.apiBaseUrl || 'https://api.openai.com/v1');
           setModel(response.data.model || 'gpt-4o-mini');
           setVoiceEnabled(!!response.data.voiceEnabled);
+          setThinkingEnabled(!!response.data.thinkingEnabled);
+          setReasoningEffort(response.data.reasoningEffort || '');
           setHasApiKey(!!response.data.hasApiKey);
         }
       })
@@ -33,7 +37,7 @@ const LLMSettings: React.FC = () => {
 
     setSaving(true);
     try {
-      const response = await llmAPI.saveSettings({ apiBaseUrl, apiKey: apiKey || undefined, model, voiceEnabled });
+      const response = await llmAPI.saveSettings({ apiBaseUrl, apiKey: apiKey || undefined, model, voiceEnabled, thinkingEnabled, reasoningEffort });
       setHasApiKey(!!response.data.hasApiKey);
       setApiKey('');
       alert(t('llm.saved'));
@@ -70,6 +74,21 @@ const LLMSettings: React.FC = () => {
           <input type="checkbox" checked={voiceEnabled} onChange={event => setVoiceEnabled(event.target.checked)} />
           {t('llm.voiceEnabled')}
         </label>
+        <div className="rounded border border-gray-200 bg-gray-50 p-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input type="checkbox" checked={thinkingEnabled} onChange={event => setThinkingEnabled(event.target.checked)} />
+            思考模式
+          </label>
+          <p className="mt-1 text-xs text-gray-500">关闭时请求会发送 OpenAI 兼容参数 <code>{'{"thinking":{"type":"disabled"}}'}</code>。</p>
+          <label className="mt-3 block">
+            <span className="text-sm font-medium text-gray-700">思考强度</span>
+            <select className="input mt-1" value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} disabled={!thinkingEnabled}>
+              <option value="">默认 high</option>
+              <option value="high">high</option>
+              <option value="max">max</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="mt-6 flex justify-end">
