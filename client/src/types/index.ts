@@ -13,6 +13,8 @@ export interface User {
 export interface Team {
   id: string;
   name: string;
+  nameEn?: string;
+  nameZh?: string;
   shortName: string;
   logo?: string | null;
   country?: string;

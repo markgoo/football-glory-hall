@@ -137,18 +137,92 @@ export const TeamLogo: React.FC<{ team?: Pick<Team, 'logo' | 'name'>; className?
 
 const containsCjk = (value?: string) => /[\u3400-\u9fff]/.test(value || '');
 
+const zhCountryNameToEn: Record<string, string> = {
+  阿根廷: 'Argentina',
+  法国: 'France',
+  西班牙: 'Spain',
+  英格兰: 'England',
+  巴西: 'Brazil',
+  葡萄牙: 'Portugal',
+  荷兰: 'Netherlands',
+  德国: 'Germany',
+  意大利: 'Italy',
+  比利时: 'Belgium',
+  克罗地亚: 'Croatia',
+  乌拉圭: 'Uruguay',
+  哥伦比亚: 'Colombia',
+  墨西哥: 'Mexico',
+  美国: 'USA',
+  瑞士: 'Switzerland',
+  丹麦: 'Denmark',
+  奥地利: 'Austria',
+  土耳其: 'Turkey',
+  日本: 'Japan',
+  韩国: 'South Korea',
+  摩洛哥: 'Morocco',
+  塞内加尔: 'Senegal',
+  塞尔维亚: 'Serbia',
+  乌克兰: 'Ukraine',
+  波兰: 'Poland',
+  瑞典: 'Sweden',
+  挪威: 'Norway',
+  尼日利亚: 'Nigeria',
+  科特迪瓦: 'Ivory Coast',
+  厄瓜多尔: 'Ecuador',
+  阿尔及利亚: 'Algeria',
+  苏格兰: 'Scotland',
+  捷克: 'Czech Republic',
+  加纳: 'Ghana',
+  澳大利亚: 'Australia',
+  突尼斯: 'Tunisia',
+  沙特阿拉伯: 'Saudi Arabia',
+  沙特: 'Saudi Arabia',
+  卡塔尔: 'Qatar',
+  南非: 'South Africa',
+  巴拉圭: 'Paraguay',
+  埃及: 'Egypt',
+  伊朗: 'Iran',
+  巴拿马: 'Panama',
+  海地: 'Haiti',
+  佛得角: 'Cape Verde',
+  伊拉克: 'Iraq',
+  约旦: 'Jordan',
+  乌兹别克斯坦: 'Uzbekistan',
+  刚果民主共和国: 'Democratic Republic of the Congo',
+  刚果金: 'Democratic Republic of the Congo',
+  新西兰: 'New Zealand',
+  波黑: 'Bosnia and Herzegovina',
+  库拉索: 'Curacao',
+  加拿大: 'Canada',
+  中国: 'China'
+};
+
+const getEnglishCountryName = (value?: string) => {
+  const normalized = String(value || '').trim();
+  return zhCountryNameToEn[normalized] || normalized;
+};
+
 export const getTeamDisplayName = (
-  team?: Pick<Team, 'name' | 'country' | 'logo'>,
+  team?: Pick<Team, 'name' | 'nameEn' | 'nameZh' | 'country' | 'logo'>,
   language: Language = 'zh',
   fallback?: string
 ) => {
   const defaultFallback = language === 'en' ? 'TBD' : '待定';
   if (!team?.name) return fallback || defaultFallback;
-  if (language === 'en' && team.country && containsCjk(team.name)) return team.country;
+  if (language === 'en') {
+    if (team.nameEn && !containsCjk(team.nameEn)) return team.nameEn;
+    if (team.country) {
+      const countryName = getEnglishCountryName(team.country);
+      if (countryName && !containsCjk(countryName)) return countryName;
+    }
+    const name = getEnglishCountryName(team.name);
+    if (name && !containsCjk(name)) return name;
+  }
+  if (language === 'zh' && team.nameZh) return team.nameZh;
   return team.name;
 };
 
-export const TeamNameWithFlag: React.FC<{ team?: Pick<Team, 'name' | 'country' | 'logo'>; className?: string; flagClassName?: string; logoClassName?: string; fallback?: string }> = ({ team, className = '', flagClassName, logoClassName, fallback }) => {
+export const TeamNameWithFlag: React.FC<{ team?: Pick<Team, 'name' | 'nameEn' | 'nameZh' | 'country' | 'logo'>; className?: string; flagClassName?: string; logoClassName?: string; fallback?: string }> = ({ team, className = '', flagClassName, logoClassName, fallback }) => {
   const { language } = useI18n();
   return (
     <span className={`inline-flex items-center gap-1 min-w-0 ${className}`}>

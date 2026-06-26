@@ -62,7 +62,27 @@ const displayPlayerName = (player: any, language: 'zh' | 'en') => {
 
 const displayPosition = (position: string | undefined, language: 'zh' | 'en') => {
   if (language === 'zh') return position || '-';
-  const map: Record<string, string> = { '门将': 'Goalkeeper', '后卫': 'Defender', '中场': 'Midfielder', '前锋': 'Forward', '球员': 'Player' };
+  const map: Record<string, string> = {
+    '门将': 'Goalkeeper',
+    '守门员': 'Goalkeeper',
+    '后卫': 'Defender',
+    '左后卫': 'Left Back',
+    '右后卫': 'Right Back',
+    '中后卫': 'Center Back',
+    '中卫': 'Center Back',
+    '边后卫': 'Full Back',
+    '中场': 'Midfielder',
+    '左中场': 'Left Midfielder',
+    '右中场': 'Right Midfielder',
+    '后腰': 'Defensive Midfielder',
+    '前腰': 'Attacking Midfielder',
+    '边锋': 'Winger',
+    '左边锋': 'Left Winger',
+    '右边锋': 'Right Winger',
+    '前锋': 'Forward',
+    '中锋': 'Striker',
+    '球员': 'Player'
+  };
   return map[position || ''] || position || '-';
 };
 

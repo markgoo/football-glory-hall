@@ -73,8 +73,8 @@ const uiText = (language: 'zh' | 'en') => ({
   syncLeague: language === 'en' ? 'API competition' : '接口赛事',
   syncSearchedLeagueIds: language === 'en' ? 'Searched league IDs' : '已搜索赛事ID',
   syncUnmatched: language === 'en' ? 'Unmatched examples' : '未匹配示例',
-  nextMatch: language === 'en' ? 'Next Match' : '下一场比赛',
-  startFiltered: language === 'en' ? 'Start Filtered Matches' : '开始当前筛选比赛',
+  nextMatch: language === 'en' ? 'Jump to Next Match' : '跳转到下一场比赛',
+  startFiltered: (count: number) => language === 'en' ? `Auto Run ${count} ${count === 1 ? 'Match' : 'Matches'}` : `自动进行 ${count} 场比赛`,
   starting: language === 'en' ? 'Starting...' : '正在开始...',
   allCompleted: language === 'en' ? 'All completed' : '全部完成',
   partial: language === 'en' ? 'Incomplete' : '有未完成',
@@ -259,6 +259,57 @@ const formatPlayerDisplayName = (player: any, language: 'zh' | 'en' = 'zh', fall
   const parts = raw.split(/\s+/).filter(Boolean);
   const surname = parts.length > 1 ? parts[parts.length - 1] : raw;
   return player?.number ? `${player.number}号 ${surname}` : surname;
+};
+const footballPositionText = (position?: string, language: 'zh' | 'en' = 'zh') => {
+  const value = String(position || '').trim();
+  if (!value) return '-';
+  if (language === 'zh') return value;
+  const map: Record<string, string> = {
+    门将: 'Goalkeeper',
+    守门员: 'Goalkeeper',
+    后卫: 'Defender',
+    左后卫: 'Left Back',
+    右后卫: 'Right Back',
+    中后卫: 'Center Back',
+    中卫: 'Center Back',
+    边后卫: 'Full Back',
+    中场: 'Midfielder',
+    左中场: 'Left Midfielder',
+    右中场: 'Right Midfielder',
+    后腰: 'Defensive Midfielder',
+    前腰: 'Attacking Midfielder',
+    边锋: 'Winger',
+    左边锋: 'Left Winger',
+    右边锋: 'Right Winger',
+    前锋: 'Forward',
+    中锋: 'Striker',
+    球员: 'Player'
+  };
+  return map[value] || value;
+};
+const tacticValueText = (value?: string | number, language: 'zh' | 'en' = 'zh') => {
+  if (typeof value === 'number') return String(value);
+  const text = String(value || '').trim();
+  if (!text) return '-';
+  if (language === 'zh') return text;
+  const map: Record<string, string> = {
+    稳守反击: 'Defensive counter',
+    主动控球: 'Possession',
+    高位压迫: 'High press',
+    平衡推进: 'Balanced',
+    保守防守: 'Conservative',
+    中低位: 'Mid-low block',
+    高位: 'High line',
+    中位: 'Mid block',
+    低位: 'Low block',
+    直接推进: 'Direct play',
+    短传渗透: 'Short passing',
+    长传冲吊: 'Long balls',
+    保持紧凑: 'Compact',
+    拉开宽度: 'Wide',
+    正常: 'Normal'
+  };
+  return map[text] || text;
 };
 const formatAIEventText = (text?: string, event?: { team?: string; player?: string }, session?: AIMatchSession | null) => {
   let value = cleanDiceNarrationText(text)
@@ -674,6 +725,7 @@ const TournamentDetail: React.FC = () => {
       .sort((a, b) => compareMatches(a, b, sortMode, stageLookup));
   }, [favoriteTeamIds, groupFilter, onlyFavorites, query, roundFilter, scheduleMatches, sortMode, stageLookup, statusFilter]);
   const filteredMatchesByRound = useMemo(() => groupMatchesByRoundAndStage(filteredMatches, stageLookup), [filteredMatches, stageLookup]);
+  const runnableFilteredMatchesCount = useMemo(() => filteredMatches.filter(match => match.status === 'scheduled' && match.homeTeam && match.awayTeam).length, [filteredMatches]);
 
   useEffect(() => {
     if (!pendingScrollMatchId) return;
@@ -1229,7 +1281,7 @@ const TournamentDetail: React.FC = () => {
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {canSyncRealResults && <button onClick={handleSyncRealResults} disabled={syncingRealResults} className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{syncingRealResults ? text.syncing : text.syncRealScores}</button>}
                 {nextScheduledMatch && <button onClick={handleJumpToNextScheduledMatch} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center"><Play className="w-4 h-4 mr-2" />{text.nextMatch}</button>}
-                {filteredMatches.some(match => match.status === 'scheduled' && match.homeTeam && match.awayTeam) && <button onClick={handleStartAllMatches} disabled={startingAll} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{startingAll ? text.starting : text.startFiltered}</button>}
+                {runnableFilteredMatchesCount > 0 && <button onClick={handleStartAllMatches} disabled={startingAll} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{startingAll ? text.starting : text.startFiltered(runnableFilteredMatchesCount)}</button>}
               </div>
             </div>
             <MatchToolbar query={query} onQueryChange={setQuery} groupFilter={groupFilter} onGroupFilterChange={setGroupFilter} groupOptions={groupOptions} roundFilter={roundFilter} onRoundFilterChange={setRoundFilter} roundOptions={roundOptions} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} sortMode={sortMode} onSortModeChange={setSortMode} onlyFavorites={onlyFavorites} onOnlyFavoritesChange={setOnlyFavorites} hasFavorites={favoriteTeamIds.length > 0} />
@@ -1587,7 +1639,7 @@ const FullFormationPitch: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: 
       return (
         <div key={`${side}-${player.number}-${index}`} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: `${left}%`, top: `${top}%` }}>
           <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow ${side === 'home' ? 'bg-blue-700' : 'bg-red-700'}`}>{player.number}</div>
-          <div className="mt-1 max-w-[70px] truncate rounded bg-black/50 px-1 text-[10px] text-white">{player.position}</div>
+          <div className="mt-1 max-w-[70px] truncate rounded bg-black/50 px-1 text-[10px] text-white">{footballPositionText(player.position, language)}</div>
         </div>
       );
     });
@@ -1624,11 +1676,11 @@ const TacticsPanel: React.FC<{ plan?: any }> = ({ plan }) => {
     <div className="mt-3 rounded border bg-white p-3">
       <div className="text-sm font-semibold text-gray-900">{t.tacticsBoard}</div>
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-700">
-        <div>{t.mentality}: {plan?.tactics?.mentality || t.staffPending}</div>
+        <div>{t.mentality}: {plan?.tactics?.mentality ? tacticValueText(plan.tactics.mentality, language) : t.staffPending}</div>
         <div>{t.pressing}: {plan?.tactics?.pressing || '-'}</div>
-        <div>{t.defensiveLine}: {plan?.tactics?.defensiveLine || '-'}</div>
-        <div>{t.passing}: {plan?.tactics?.passingStyle || '-'}</div>
-        <div>{t.width}: {plan?.tactics?.attackingWidth || '-'}</div>
+        <div>{t.defensiveLine}: {tacticValueText(plan?.tactics?.defensiveLine, language)}</div>
+        <div>{t.passing}: {tacticValueText(plan?.tactics?.passingStyle, language)}</div>
+        <div>{t.width}: {tacticValueText(plan?.tactics?.attackingWidth, language)}</div>
         <div className="text-gray-400">{t.tacticsPending}</div>
       </div>
     </div>
@@ -1664,7 +1716,7 @@ const LineupPanel: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string;
           <div key={`${side}-lineup-${player.number || index}-${player.name || index}`} className="flex items-center gap-2 rounded bg-white px-2 py-1.5 text-sm shadow-sm">
             <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${side === 'home' ? 'bg-blue-700' : 'bg-red-700'}`}>{player.number || index + 1}</span>
             <span className="min-w-0 flex-1 truncate font-medium text-gray-900">{formatPlayerDisplayName(player, language, t.player(index + 1))}</span>
-            <span className="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{player.position || '-'}</span>
+            <span className="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{footballPositionText(player.position, language)}</span>
           </div>
         ))}
       </div>
@@ -1735,6 +1787,8 @@ const AIMatchModal: React.FC<{
   const penaltyComplete = getPenaltyComplete(penaltyKicks);
   const commentaryEvents = [...(session?.events || [])].filter(event => !isPendingInteractiveAIEvent(event)).reverse();
   const latestCommentary = formatAIBroadcastText(commentaryEvents[0], session, language);
+  const homeDisplayName = getTeamDisplayName(match.homeTeam, language, t.home);
+  const awayDisplayName = getTeamDisplayName(match.awayTeam, language, t.away);
   const [displayMinute, setDisplayMinute] = useState(0);
   const [crowdEnabled, setCrowdEnabled] = useState(true);
   const [startOptionsOpen, setStartOptionsOpen] = useState(false);
@@ -1802,9 +1856,9 @@ const AIMatchModal: React.FC<{
     if (previousScoreRef.current !== currentScore) {
       const [previousHome, previousAway] = previousScoreRef.current.split('-').map(value => Number(value) || 0);
       const scoringTeamName = (session.homeScore || 0) > previousHome
-        ? match.homeTeam?.name || t.home
+        ? homeDisplayName
         : (session.awayScore || 0) > previousAway
-          ? match.awayTeam?.name || t.away
+          ? awayDisplayName
           : t.attacker;
       previousScoreRef.current = currentScore;
       setGoalFlash(true);
@@ -1822,7 +1876,7 @@ const AIMatchModal: React.FC<{
       }, 3600);
       return () => window.clearTimeout(timer);
     }
-  }, [match.awayTeam?.name, match.homeTeam?.name, session?.homeScore, session?.awayScore, session?.id]);
+  }, [awayDisplayName, homeDisplayName, session?.homeScore, session?.awayScore, session?.id]);
 
   useEffect(() => {
     if (!session || !crowdAudioRef.current) return;
@@ -1893,7 +1947,7 @@ const AIMatchModal: React.FC<{
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">{t.title}</h2>
-            <p className="mt-1 text-sm text-gray-600">{match.homeTeam?.name} vs {match.awayTeam?.name}</p>
+            <p className="mt-1 text-sm text-gray-600">{homeDisplayName} vs {awayDisplayName}</p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <button onClick={() => setStartOptionsOpen(true)} disabled={running || !!session} className="rounded bg-purple-600 px-3 py-2 text-sm text-white hover:bg-purple-700 disabled:opacity-50">{running ? t.starting : t.start}</button>
@@ -1909,11 +1963,11 @@ const AIMatchModal: React.FC<{
           <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-3">
             <div className="flex min-w-0 items-center justify-end gap-2 text-right text-sm font-semibold sm:text-base">
               <TeamFlag team={match.homeTeam} className="h-4 w-6 flex-shrink-0" />
-              <span className="truncate">{match.homeTeam?.name || t.home}</span>
+              <span className="truncate">{homeDisplayName}</span>
             </div>
             <div className="rounded border border-emerald-200 bg-white px-4 py-2 text-2xl font-bold tabular-nums text-gray-950 shadow-sm">{session?.homeScore ?? 0} - {session?.awayScore ?? 0}</div>
             <div className="flex min-w-0 items-center gap-2 text-sm font-semibold sm:text-base">
-              <span className="truncate">{match.awayTeam?.name || t.away}</span>
+              <span className="truncate">{awayDisplayName}</span>
               <TeamFlag team={match.awayTeam} className="h-4 w-6 flex-shrink-0" />
             </div>
             <div className="rounded bg-emerald-700 px-3 py-2 text-xl font-bold tabular-nums text-white">{formatAIMatchClock(displayMinute)}</div>
@@ -1952,7 +2006,7 @@ const AIMatchModal: React.FC<{
                   {(session.engineState.pendingEvents || []).length === 0 && <div className="text-rose-700">{t.noFutureEvents}</div>}
                   {(session.engineState.pendingEvents || []).map((event: any) => (
                     <div key={event.id} className={`border-b py-1 last:border-b-0 ${event.consumed ? 'text-gray-400 line-through' : ''}`}>
-                      {event.minute}' · {event.team === 'home' ? match.homeTeam?.name : match.awayTeam?.name} · {event.type} · {t.probability} {Math.round((event.probability || 0) * 100)}% · {event.reason}
+                      {event.minute}' · {event.team === 'home' ? homeDisplayName : awayDisplayName} · {event.type} · {t.probability} {Math.round((event.probability || 0) * 100)}% · {event.reason}
                     </div>
                   ))}
                 </div>
@@ -1965,14 +2019,14 @@ const AIMatchModal: React.FC<{
 
         <div className="mt-5 grid gap-4 lg:grid-cols-[260px_1fr]">
           <div className="space-y-4">
-            <LineupPanel homePlan={session?.homePlan} awayPlan={session?.awayPlan} homeName={match.homeTeam?.name} awayName={match.awayTeam?.name} />
+            <LineupPanel homePlan={session?.homePlan} awayPlan={session?.awayPlan} homeName={homeDisplayName} awayName={awayDisplayName} />
           </div>
 
           <div className="space-y-4">
-            <FullFormationPitch homePlan={session?.homePlan} awayPlan={session?.awayPlan} homeName={match.homeTeam?.name} awayName={match.awayTeam?.name} />
+            <FullFormationPitch homePlan={session?.homePlan} awayPlan={session?.awayPlan} homeName={homeDisplayName} awayName={awayDisplayName} />
             <div className="grid gap-3 md:grid-cols-2">
-              <PlanPanel title={`${match.homeTeam?.name || t.home} ${language === 'en' ? 'Tactics' : '战术'}`} plan={session?.homePlan} />
-              <PlanPanel title={`${match.awayTeam?.name || t.away} ${language === 'en' ? 'Tactics' : '战术'}`} plan={session?.awayPlan} />
+              <PlanPanel title={`${homeDisplayName} ${language === 'en' ? 'Tactics' : '战术'}`} plan={session?.homePlan} />
+              <PlanPanel title={`${awayDisplayName} ${language === 'en' ? 'Tactics' : '战术'}`} plan={session?.awayPlan} />
             </div>
             <div className="rounded border border-blue-100 bg-blue-50 p-3">
               <div className="flex items-center justify-between gap-4 text-sm text-blue-950">
