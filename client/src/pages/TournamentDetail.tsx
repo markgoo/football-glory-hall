@@ -125,6 +125,100 @@ const uiText = (language: 'zh' | 'en') => ({
   timePending: language === 'en' ? 'Time pending' : '时间待定',
   teamPending: language === 'en' ? 'TBD' : '待定'
 });
+const aiDuelText = (language: 'zh' | 'en') => ({
+  title: language === 'en' ? 'AI Duel' : 'AI 对决',
+  starting: language === 'en' ? 'AI Duel running...' : 'AI 对决中...',
+  start: language === 'en' ? 'Start AI Duel' : '开始 AI 对决',
+  secondHalf: language === 'en' ? 'Start Second Half' : '下半场开始',
+  finishing: language === 'en' ? 'Finishing...' : '结算中...',
+  quickFinish: language === 'en' ? 'Quick Finish' : '快速完成',
+  saving: language === 'en' ? 'Saving...' : '保存中...',
+  save: language === 'en' ? 'Save Result' : '保存结果',
+  saveAndClose: language === 'en' ? 'Save and Close' : '保存结果并关闭',
+  penaltyFirst: language === 'en' ? 'Finish penalties first' : '先点球',
+  close: language === 'en' ? 'Close' : '关闭',
+  cancel: language === 'en' ? 'Cancel' : '取消',
+  kickoff: language === 'en' ? 'Kick off' : '开球',
+  debug: language === 'en' ? 'DEBUG' : 'DEBUG',
+  home: language === 'en' ? 'Home' : '主队',
+  away: language === 'en' ? 'Away' : '客队',
+  attacker: language === 'en' ? 'Attacker' : '进攻方',
+  standby: language === 'en' ? 'Waiting to enter' : '待入场',
+  homeTunnel: language === 'en' ? 'Home team waiting in the tunnel' : '主队正在通道候场',
+  awayTunnel: language === 'en' ? 'Away team waiting in the tunnel' : '客队正在通道候场',
+  tacticsBoard: language === 'en' ? 'Tactics Board' : '战术设置板',
+  mentality: language === 'en' ? 'Mentality' : '心态',
+  pressing: language === 'en' ? 'Pressing' : '压迫',
+  defensiveLine: language === 'en' ? 'Line' : '防线',
+  passing: language === 'en' ? 'Passing' : '传球',
+  width: language === 'en' ? 'Width' : '宽度',
+  staffPending: language === 'en' ? 'Coaching staff pending' : '教练组待定',
+  tacticsPending: language === 'en' ? 'Pre-match tactics pending' : '赛前战术待确认',
+  tacticsSubmitting: language === 'en' ? 'Coaching staff is submitting the tactical board.' : '教练组正在提交赛前战术板。',
+  lineup: language === 'en' ? 'Lineups' : '球员名单',
+  startingXI: language === 'en' ? 'Starting XI' : '首发 11 人',
+  lineupPending: language === 'en' ? 'Lineup is being generated' : '待入场名单生成中',
+  player: (index: number) => language === 'en' ? `Player ${index}` : `球员 ${index}`,
+  halftimeText: language === 'en' ? 'Players are back in the dressing rooms. The booth will resume shortly.' : '球员回到更衣室，解说席稍作调整。',
+  waitingBooth: language === 'en' ? 'The broadcast booth is connecting to the stadium feed.' : '解说席正在连线，等待开球哨响。',
+  goal: language === 'en' ? 'GOAL!' : '进球啦！',
+  preMatchDebug: language === 'en' ? 'Pre-match DEBUG' : '赛前 DEBUG',
+  adminOnly: language === 'en' ? 'Admin only' : '仅 admin 可见',
+  goalBudget: language === 'en' ? 'Goal budget' : '预设进球预算',
+  usedGoals: language === 'en' ? 'Goals used' : '已发生进球',
+  chanceBudget: language === 'en' ? 'Big chance budget' : '大机会预算',
+  usedChances: language === 'en' ? 'Big chances used' : '已发生大机会',
+  noFutureEvents: language === 'en' ? 'No future events.' : '暂无未来事件。',
+  probability: language === 'en' ? 'probability' : '发生率',
+  debugPending: language === 'en' ? 'Start AI Duel to generate score budget and future events.' : '开始 AI 对决后会生成赛前比分预算和未来事件。',
+  autoShot: language === 'en' ? 'Auto Shot Resolution' : '自动判定射门',
+  autoShotDesc: language === 'en' ? 'When enabled, the God Dice shot dialog will not open. The system rolls automatically and the second half starts automatically.' : '开启后不弹出“上帝正在掷射门骰子”，系统自动掷骰；中场也会自动进入下半场。',
+  commentary: language === 'en' ? 'Radio Commentary' : '广播解说',
+  shotDecision: language === 'en' ? 'Key Shot Decision' : '关键射门判定',
+  diceFeedback: language === 'en' ? 'After God Dice resolves it, the result is sent back to the AI commentary.' : '上帝摇骰子后，结果会反馈给 AI 解说继续比赛。',
+  aiPenaltyDiceTitle: language === 'en' ? 'AI penalty shootout. God Dice decides shot and save.' : 'AI 对决点球大战，上帝摇骰子决定射门和扑救。',
+  shotDiceTitle: language === 'en' ? 'Key shot. God Dice decides shot and save.' : '关键射门，上帝摇骰子决定射门与扑救。',
+  homeShots: language === 'en' ? 'Home Shots' : '主队射门',
+  awayShots: language === 'en' ? 'Away Shots' : '客队射门',
+  homeCorners: language === 'en' ? 'Home Corners' : '主队角球',
+  awayCorners: language === 'en' ? 'Away Corners' : '客队角球',
+  broadcastSettings: language === 'en' ? 'Broadcast Settings' : '转播设置',
+  compressedPlayback: language === 'en' ? 'Compressed playback' : '压缩播放',
+  voice: language === 'en' ? 'Voice commentary' : '广播语音播报',
+  crowd: language === 'en' ? 'Crowd ambience' : '观众背景音',
+  preMatchSettings: language === 'en' ? 'Pre-match Broadcast Settings' : '赛前转播设置',
+  durationHelp: language === 'en' ? 'The match is 90 minutes. Select compressed playback duration.' : '实际比赛为 90 分钟，选择压缩播放用时。',
+  durationSeconds: language === 'en' ? '30 seconds' : '30秒',
+  durationMinutes: (value: number) => language === 'en' ? `${value} minutes` : `${value}分钟`,
+  penaltyComplete: (score: string) => language === 'en' ? `Penalty shootout complete: ${score}` : `点球大战完成：${score}`,
+  penaltyRound: (round: number, shooter?: string, keeper?: string) => language === 'en' ? `Round ${round}, ${shooter || 'shooter'} shoots, ${keeper || 'keeper'} saves` : `第 ${round} 轮，${shooter || '射门方'} 射门，${keeper || '守门方'} 守门`,
+  shooter: language === 'en' ? 'Shooter' : '射门方',
+  keeper: language === 'en' ? 'Keeper' : '守门方',
+  manualDice: language === 'en' ? 'God Dice' : '上帝摇骰子',
+  penaltyShootout: language === 'en' ? 'Penalty Shootout' : '点球大战',
+  penaltyHelp: language === 'en' ? 'The shooter rolls first, then the keeper. A shot value greater than or equal to the save value is a goal.' : '射门球员先掷，守门员后掷。射门点数大于或等于守门点数即进球，否则被扑出。',
+  autoPenalty: language === 'en' ? 'Auto Penalty Shootout' : '自动点球大战',
+  extraRound: language === 'en' ? 'Sudden death' : '加罚',
+  currentRound: language === 'en' ? 'Current round' : '当前轮次',
+  shoot: language === 'en' ? 'Shot' : '射门',
+  saveAttempt: language === 'en' ? 'Save' : '扑救',
+  current: language === 'en' ? 'Current' : '当前',
+  pending: language === 'en' ? 'Pending' : '待进行',
+  round: (value: number) => language === 'en' ? `Round ${value}` : `第 ${value} 轮`,
+  goalResult: language === 'en' ? 'Goal' : '进球',
+  missed: language === 'en' ? 'Missed' : '打飞',
+  saved: language === 'en' ? 'Saved' : '被扑出',
+  rollingShot: language === 'en' ? 'Shooting...' : '射门中...',
+  rollingSave: language === 'en' ? 'Saving...' : '扑救中...',
+  godPenaltyTitle: language === 'en' ? 'God is rolling penalty dice' : '上帝正在掷点球骰子',
+  godShotTitle: language === 'en' ? 'God is rolling shot dice' : '上帝正在掷射门骰子',
+  shotDecisionStart: language === 'en' ? 'Shot decision begins' : '射门判定开始',
+  shotDecisionHelp: language === 'en' ? 'Click Shot first to decide shot quality, then click Save to decide the goalkeeper reaction.' : '先点击“射门”决定这脚打门质量，再点击“扑救”决定门将反应。',
+  aiFailed: language === 'en' ? 'AI Duel failed' : 'AI 对决失败',
+  knockoutDrawNeedsPenalty: language === 'en' ? 'Knockout draw requires penalties first' : '淘汰赛平局需要先完成点球大战',
+  saveFailed: language === 'en' ? 'Failed to save AI Duel result' : '保存 AI 对决结果失败',
+  quickFinishFailed: language === 'en' ? 'Quick finish failed' : '快速完成失败'
+});
 const stageName = (name: string | undefined, language: 'zh' | 'en') => {
   const value = name || KNOCKOUT_GROUP_NAME;
   if (language === 'zh') return value;
@@ -192,7 +286,7 @@ const cleanAIScoreText = (text: string, session?: AIMatchSession | null) => {
     .replace(/score(?: is| becomes| now)?\s*\d+\s*[-:]\s*\d+/gi, `score is ${session.homeScore}-${session.awayScore}`);
 };
 const formatAIBroadcastText = (event?: AIMatchEvent, session?: AIMatchSession | null, language: 'zh' | 'en' = 'zh') => {
-  if (!event) return language === 'en' ? 'The booth is waiting for kickoff.' : '解说席正在连线，等待开球哨响。';
+  if (!event) return aiDuelText(language).waitingBooth;
   if (event.broadcastText) return cleanAIScoreText(cleanDiceNarrationText(event.broadcastText), session);
   return cleanAIScoreText(formatAIEventText(event.text, event, session), session);
 };
@@ -469,6 +563,7 @@ const TournamentDetail: React.FC = () => {
   const { user } = useAuth();
   const { language } = useI18n();
   const text = uiText(language);
+  const aiText = aiDuelText(language);
   const [tournament, setTournament] = useState<TournamentDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [startingMatch, setStartingMatch] = useState<string | null>(null);
@@ -809,7 +904,7 @@ const TournamentDetail: React.FC = () => {
         if (current.status !== 'finished') await wait(Math.max(0, intervalMs - (Date.now() - stepStartedAt)));
       }
     } catch (error: any) {
-      alert(error.response?.data?.error || error.message || 'AI 对决失败');
+      alert(error.response?.data?.error || error.message || aiText.aiFailed);
     } finally {
       setAiRunning(false);
     }
@@ -825,7 +920,7 @@ const TournamentDetail: React.FC = () => {
     const aiNeedsPenalty = !aiMatch.groupName && aiSession.homeScore === aiSession.awayScore;
     const aiPenaltyComplete = getPenaltyComplete(aiPenaltyKicks);
     if (aiNeedsPenalty && !aiPenaltyComplete) {
-      alert('淘汰赛平局需要先完成点球大战');
+      alert(aiText.knockoutDrawNeedsPenalty);
       return;
     }
     setAiSaving(true);
@@ -857,7 +952,7 @@ const TournamentDetail: React.FC = () => {
       setAiInteractiveEvent(null);
       await fetchTournament();
     } catch (error: any) {
-      alert(error.response?.data?.error || error.message || '保存 AI 对决结果失败');
+      alert(error.response?.data?.error || error.message || aiText.saveFailed);
     } finally {
       setAiSaving(false);
     }
@@ -882,7 +977,7 @@ const TournamentDetail: React.FC = () => {
       const response = await llmAPI.finishSession(current.id);
       setAiSession(response.data as AIMatchSession);
     } catch (error: any) {
-      alert(error.response?.data?.error || error.message || '快速完成失败');
+      alert(error.response?.data?.error || error.message || aiText.quickFinishFailed);
     } finally {
       setAiFinishing(false);
     }
@@ -1480,6 +1575,8 @@ const formationCoordinates: Record<string, Array<{ x: number; y: number }>> = {
 };
 
 const FullFormationPitch: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string; awayName?: string }> = ({ homePlan, awayPlan, homeName, awayName }) => {
+  const { language } = useI18n();
+  const t = aiDuelText(language);
   const renderPlayers = (plan: any, side: 'home' | 'away') => {
     const lineup = plan?.lineup || [];
     const coords = formationCoordinates[plan?.formation] || formationCoordinates['4-4-2'];
@@ -1499,8 +1596,8 @@ const FullFormationPitch: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: 
   return (
     <div className="rounded border bg-gray-50 p-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-semibold text-blue-800">{homeName || '主队'} · {homePlan?.formation || '待入场'}</div>
-        <div className="text-sm font-semibold text-red-800">{awayPlan?.formation || '待入场'} · {awayName || '客队'}</div>
+        <div className="text-sm font-semibold text-blue-800">{homeName || t.home} · {homePlan?.formation || t.standby}</div>
+        <div className="text-sm font-semibold text-red-800">{awayPlan?.formation || t.standby} · {awayName || t.away}</div>
       </div>
       <div className="relative aspect-[16/9] overflow-hidden rounded bg-emerald-700 shadow-inner">
         <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,.18) 0 1px, transparent 1px 12%)' }} />
@@ -1513,43 +1610,52 @@ const FullFormationPitch: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: 
         <div className="absolute right-3 top-1/2 h-20 w-9 -translate-y-1/2 border-2 border-r-0 border-white/55" />
         <div className="absolute left-[10%] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-white/70" />
         <div className="absolute right-[10%] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-white/70" />
-        {homePlan ? renderPlayers(homePlan, 'home') : <div className="absolute left-1/4 top-1/2 -translate-x-1/2 rounded bg-black/40 px-3 py-2 text-sm text-white">主队正在通道候场</div>}
-        {awayPlan ? renderPlayers(awayPlan, 'away') : <div className="absolute right-1/4 top-1/2 translate-x-1/2 rounded bg-black/40 px-3 py-2 text-sm text-white">客队正在通道候场</div>}
+        {homePlan ? renderPlayers(homePlan, 'home') : <div className="absolute left-1/4 top-1/2 -translate-x-1/2 rounded bg-black/40 px-3 py-2 text-sm text-white">{t.homeTunnel}</div>}
+        {awayPlan ? renderPlayers(awayPlan, 'away') : <div className="absolute right-1/4 top-1/2 translate-x-1/2 rounded bg-black/40 px-3 py-2 text-sm text-white">{t.awayTunnel}</div>}
       </div>
     </div>
   );
 };
 
-const TacticsPanel: React.FC<{ plan?: any }> = ({ plan }) => (
-  <div className="mt-3 rounded border bg-white p-3">
-    <div className="text-sm font-semibold text-gray-900">战术设置板</div>
-    <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-700">
-      <div>心态：{plan?.tactics?.mentality || '教练组待定'}</div>
-      <div>压迫：{plan?.tactics?.pressing || '-'}</div>
-      <div>防线：{plan?.tactics?.defensiveLine || '-'}</div>
-      <div>传球：{plan?.tactics?.passingStyle || '-'}</div>
-      <div>宽度：{plan?.tactics?.attackingWidth || '-'}</div>
-      <div className="text-gray-400">赛前战术待确认</div>
+const TacticsPanel: React.FC<{ plan?: any }> = ({ plan }) => {
+  const { language } = useI18n();
+  const t = aiDuelText(language);
+  return (
+    <div className="mt-3 rounded border bg-white p-3">
+      <div className="text-sm font-semibold text-gray-900">{t.tacticsBoard}</div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-700">
+        <div>{t.mentality}: {plan?.tactics?.mentality || t.staffPending}</div>
+        <div>{t.pressing}: {plan?.tactics?.pressing || '-'}</div>
+        <div>{t.defensiveLine}: {plan?.tactics?.defensiveLine || '-'}</div>
+        <div>{t.passing}: {plan?.tactics?.passingStyle || '-'}</div>
+        <div>{t.width}: {plan?.tactics?.attackingWidth || '-'}</div>
+        <div className="text-gray-400">{t.tacticsPending}</div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
-const PlanPanel: React.FC<{ title: string; plan?: any }> = ({ title, plan }) => (
-  <div className="rounded border bg-gray-50 p-3">
-    <div className="flex items-center justify-between gap-2">
-      <h4 className="font-semibold text-gray-900">{title}</h4>
-      <span className="rounded bg-white px-2 py-1 text-sm text-gray-700">{plan?.formation || '待入场'}</span>
+const PlanPanel: React.FC<{ title: string; plan?: any }> = ({ title, plan }) => {
+  const { language } = useI18n();
+  const t = aiDuelText(language);
+  return (
+    <div className="rounded border bg-gray-50 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="font-semibold text-gray-900">{title}</h4>
+        <span className="rounded bg-white px-2 py-1 text-sm text-gray-700">{plan?.formation || t.standby}</span>
+      </div>
+      {plan ? <TacticsPanel plan={plan} /> : <p className="mt-3 text-sm text-gray-500">{t.tacticsSubmitting}</p>}
     </div>
-    {plan ? <TacticsPanel plan={plan} /> : <p className="mt-3 text-sm text-gray-500">教练组正在提交赛前战术板。</p>}
-  </div>
-);
+  );
+};
 
 const LineupPanel: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string; awayName?: string }> = ({ homePlan, awayPlan, homeName, awayName }) => {
   const { language } = useI18n();
+  const t = aiDuelText(language);
   const renderLineup = (plan: any, side: 'home' | 'away') => {
     const lineup = plan?.lineup || [];
     if (lineup.length === 0) {
-      return <div className="rounded bg-gray-50 p-3 text-sm text-gray-500">待入场名单生成中</div>;
+      return <div className="rounded bg-gray-50 p-3 text-sm text-gray-500">{t.lineupPending}</div>;
     }
 
     return (
@@ -1557,7 +1663,7 @@ const LineupPanel: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string;
         {lineup.map((player: any, index: number) => (
           <div key={`${side}-lineup-${player.number || index}-${player.name || index}`} className="flex items-center gap-2 rounded bg-white px-2 py-1.5 text-sm shadow-sm">
             <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${side === 'home' ? 'bg-blue-700' : 'bg-red-700'}`}>{player.number || index + 1}</span>
-            <span className="min-w-0 flex-1 truncate font-medium text-gray-900">{formatPlayerDisplayName(player, language, `球员 ${index + 1}`)}</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-gray-900">{formatPlayerDisplayName(player, language, t.player(index + 1))}</span>
             <span className="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{player.position || '-'}</span>
           </div>
         ))}
@@ -1568,21 +1674,21 @@ const LineupPanel: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string;
   return (
     <div className="rounded border bg-gray-50 p-3">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="font-semibold text-gray-900">球员名单</h3>
-        <span className="rounded bg-white px-2 py-1 text-xs text-gray-600">首发 11 人</span>
+        <h3 className="font-semibold text-gray-900">{t.lineup}</h3>
+        <span className="rounded bg-white px-2 py-1 text-xs text-gray-600">{t.startingXI}</span>
       </div>
       <div className="space-y-4">
         <section>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="truncate text-sm font-semibold text-blue-800">{homeName || '主队'}</div>
-            <div className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-800">{homePlan?.formation || '待入场'}</div>
+            <div className="truncate text-sm font-semibold text-blue-800">{homeName || t.home}</div>
+            <div className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-800">{homePlan?.formation || t.standby}</div>
           </div>
           {renderLineup(homePlan, 'home')}
         </section>
         <section>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="truncate text-sm font-semibold text-red-800">{awayName || '客队'}</div>
-            <div className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-800">{awayPlan?.formation || '待入场'}</div>
+            <div className="truncate text-sm font-semibold text-red-800">{awayName || t.away}</div>
+            <div className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-800">{awayPlan?.formation || t.standby}</div>
           </div>
           {renderLineup(awayPlan, 'away')}
         </section>
@@ -1621,8 +1727,9 @@ const AIMatchModal: React.FC<{
   onClose: () => void;
 }> = ({ match, session, duration, running, saving, finishing, voiceEnabled, autoShotResolution, halftimePaused, interactiveEvent, penaltyKicks, penaltyDiceOpen, isAdmin, onDurationChange, onVoiceChange, onAutoShotResolutionChange, onContinueSecondHalf, onInteractiveDiceClose, onInteractiveDiceComplete, onStart, onFinish, onSave, onPenaltyRoll, onPenaltyManualRoll, onPenaltyDiceClose, onPenaltyDiceComplete, onClose }) => {
   const { language } = useI18n();
+  const t = aiDuelText(language);
   const durations = [0.5, 1, 2, 4, 6, 8, 16, 20, 45, 90];
-  const formatDurationOption = (value: number) => value < 1 ? '30秒' : `${value}分钟`;
+  const formatDurationOption = (value: number) => value < 1 ? t.durationSeconds : t.durationMinutes(value);
   const finished = session?.status === 'finished';
   const needsPenalty = Boolean(finished && !match.groupName && session?.homeScore === session?.awayScore);
   const penaltyComplete = getPenaltyComplete(penaltyKicks);
@@ -1695,10 +1802,10 @@ const AIMatchModal: React.FC<{
     if (previousScoreRef.current !== currentScore) {
       const [previousHome, previousAway] = previousScoreRef.current.split('-').map(value => Number(value) || 0);
       const scoringTeamName = (session.homeScore || 0) > previousHome
-        ? match.homeTeam?.name || '主队'
+        ? match.homeTeam?.name || t.home
         : (session.awayScore || 0) > previousAway
-          ? match.awayTeam?.name || '客队'
-          : '进攻方';
+          ? match.awayTeam?.name || t.away
+          : t.attacker;
       previousScoreRef.current = currentScore;
       setGoalFlash(true);
       setGoalNotice({ teamName: scoringTeamName, score: currentScore });
@@ -1785,16 +1892,16 @@ const AIMatchModal: React.FC<{
       <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">AI 对决</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{t.title}</h2>
             <p className="mt-1 text-sm text-gray-600">{match.homeTeam?.name} vs {match.awayTeam?.name}</p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <button onClick={() => setStartOptionsOpen(true)} disabled={running || !!session} className="rounded bg-purple-600 px-3 py-2 text-sm text-white hover:bg-purple-700 disabled:opacity-50">{running ? 'AI 对决中...' : '开始 AI 对决'}</button>
-            {halftimePaused && <button onClick={onContinueSecondHalf} className="rounded bg-amber-700 px-3 py-2 text-sm text-white hover:bg-amber-800">下半场开始</button>}
-            <button onClick={onFinish} disabled={finishing || session?.status === 'finished'} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-gray-900 disabled:opacity-50">{finishing ? '结算中...' : '快速完成'}</button>
-            <button onClick={onSave} disabled={!finished || saving || (needsPenalty && !penaltyComplete)} className="rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700 disabled:opacity-50">{saving ? '保存中...' : needsPenalty && !penaltyComplete ? '先点球' : finished ? '保存结果并关闭' : '保存结果'}</button>
-            {isAdmin && <button onClick={() => setDebugOpen(open => !open)} className="rounded bg-rose-600 px-3 py-2 text-sm text-white hover:bg-rose-700">DEBUG</button>}
-            {!finished && <button onClick={onClose} disabled={running} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 disabled:opacity-50">关闭</button>}
+            <button onClick={() => setStartOptionsOpen(true)} disabled={running || !!session} className="rounded bg-purple-600 px-3 py-2 text-sm text-white hover:bg-purple-700 disabled:opacity-50">{running ? t.starting : t.start}</button>
+            {halftimePaused && <button onClick={onContinueSecondHalf} className="rounded bg-amber-700 px-3 py-2 text-sm text-white hover:bg-amber-800">{t.secondHalf}</button>}
+            <button onClick={onFinish} disabled={finishing || session?.status === 'finished'} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-gray-900 disabled:opacity-50">{finishing ? t.finishing : t.quickFinish}</button>
+            <button onClick={onSave} disabled={!finished || saving || (needsPenalty && !penaltyComplete)} className="rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700 disabled:opacity-50">{saving ? t.saving : needsPenalty && !penaltyComplete ? t.penaltyFirst : finished ? t.saveAndClose : t.save}</button>
+            {isAdmin && <button onClick={() => setDebugOpen(open => !open)} className="rounded bg-rose-600 px-3 py-2 text-sm text-white hover:bg-rose-700">{t.debug}</button>}
+            {!finished && <button onClick={onClose} disabled={running} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 disabled:opacity-50">{t.close}</button>}
           </div>
         </div>
 
@@ -1802,11 +1909,11 @@ const AIMatchModal: React.FC<{
           <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-3">
             <div className="flex min-w-0 items-center justify-end gap-2 text-right text-sm font-semibold sm:text-base">
               <TeamFlag team={match.homeTeam} className="h-4 w-6 flex-shrink-0" />
-              <span className="truncate">{match.homeTeam?.name || '主队'}</span>
+              <span className="truncate">{match.homeTeam?.name || t.home}</span>
             </div>
             <div className="rounded border border-emerald-200 bg-white px-4 py-2 text-2xl font-bold tabular-nums text-gray-950 shadow-sm">{session?.homeScore ?? 0} - {session?.awayScore ?? 0}</div>
             <div className="flex min-w-0 items-center gap-2 text-sm font-semibold sm:text-base">
-              <span className="truncate">{match.awayTeam?.name || '客队'}</span>
+              <span className="truncate">{match.awayTeam?.name || t.away}</span>
               <TeamFlag team={match.awayTeam} className="h-4 w-6 flex-shrink-0" />
             </div>
             <div className="rounded bg-emerald-700 px-3 py-2 text-xl font-bold tabular-nums text-white">{formatAIMatchClock(displayMinute)}</div>
@@ -1816,13 +1923,13 @@ const AIMatchModal: React.FC<{
           </div>
         </div>
         <div className="mt-2 rounded-lg border border-emerald-100 bg-white px-4 py-3 text-sm text-gray-800 shadow-sm">
-          {halftimePaused ? '球员回到更衣室，解说席稍作调整。' : latestCommentary || '解说席正在连线，等待开球哨响。'}
+          {halftimePaused ? t.halftimeText : latestCommentary || t.waitingBooth}
         </div>
         {goalNotice && (
           <div className="mt-3 rounded-lg border-2 border-yellow-300 bg-gradient-to-r from-yellow-300 via-red-500 to-pink-600 px-5 py-4 text-white shadow-lg goal-scoreboard-blast">
             <div className="text-xs font-bold uppercase tracking-widest">GOAL</div>
             <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
-              <div className="text-2xl font-black">进球啦！{goalNotice.teamName}</div>
+              <div className="text-2xl font-black">{t.goal}{goalNotice.teamName}</div>
               <div className="rounded bg-black/25 px-3 py-1 text-2xl font-black tabular-nums">{goalNotice.score}</div>
             </div>
           </div>
@@ -1830,28 +1937,28 @@ const AIMatchModal: React.FC<{
         {isAdmin && debugOpen && (
           <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-semibold">赛前 DEBUG</h3>
-              <span className="rounded bg-white px-2 py-1 text-xs">仅 admin 可见</span>
+              <h3 className="font-semibold">{t.preMatchDebug}</h3>
+              <span className="rounded bg-white px-2 py-1 text-xs">{t.adminOnly}</span>
             </div>
             {session?.engineState ? (
               <>
                 <div className="mt-3 grid gap-2 md:grid-cols-4">
-                  <div className="rounded bg-white p-2">预设进球预算：{session.engineState.goalBudget ?? '-'}</div>
-                  <div className="rounded bg-white p-2">已发生进球：{session.engineState.usedGoalBudget ?? 0}</div>
-                  <div className="rounded bg-white p-2">大机会预算：{session.engineState.bigChanceBudget ?? '-'}</div>
-                  <div className="rounded bg-white p-2">已发生大机会：{session.engineState.usedBigChanceBudget ?? 0}</div>
+                  <div className="rounded bg-white p-2">{t.goalBudget}: {session.engineState.goalBudget ?? '-'}</div>
+                  <div className="rounded bg-white p-2">{t.usedGoals}: {session.engineState.usedGoalBudget ?? 0}</div>
+                  <div className="rounded bg-white p-2">{t.chanceBudget}: {session.engineState.bigChanceBudget ?? '-'}</div>
+                  <div className="rounded bg-white p-2">{t.usedChances}: {session.engineState.usedBigChanceBudget ?? 0}</div>
                 </div>
                 <div className="mt-3 max-h-44 overflow-y-auto rounded bg-white p-2">
-                  {(session.engineState.pendingEvents || []).length === 0 && <div className="text-rose-700">暂无未来事件。</div>}
+                  {(session.engineState.pendingEvents || []).length === 0 && <div className="text-rose-700">{t.noFutureEvents}</div>}
                   {(session.engineState.pendingEvents || []).map((event: any) => (
                     <div key={event.id} className={`border-b py-1 last:border-b-0 ${event.consumed ? 'text-gray-400 line-through' : ''}`}>
-                      {event.minute}' · {event.team === 'home' ? match.homeTeam?.name : match.awayTeam?.name} · {event.type} · 发生率 {Math.round((event.probability || 0) * 100)}% · {event.reason}
+                      {event.minute}' · {event.team === 'home' ? match.homeTeam?.name : match.awayTeam?.name} · {event.type} · {t.probability} {Math.round((event.probability || 0) * 100)}% · {event.reason}
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              <div className="mt-3 rounded bg-white p-3 text-rose-700">开始 AI 对决后会生成赛前比分预算和未来事件。</div>
+              <div className="mt-3 rounded bg-white p-3 text-rose-700">{t.debugPending}</div>
             )}
           </div>
         )}
@@ -1864,14 +1971,14 @@ const AIMatchModal: React.FC<{
           <div className="space-y-4">
             <FullFormationPitch homePlan={session?.homePlan} awayPlan={session?.awayPlan} homeName={match.homeTeam?.name} awayName={match.awayTeam?.name} />
             <div className="grid gap-3 md:grid-cols-2">
-              <PlanPanel title={`${match.homeTeam?.name || '主队'} 战术`} plan={session?.homePlan} />
-              <PlanPanel title={`${match.awayTeam?.name || '客队'} 战术`} plan={session?.awayPlan} />
+              <PlanPanel title={`${match.homeTeam?.name || t.home} ${language === 'en' ? 'Tactics' : '战术'}`} plan={session?.homePlan} />
+              <PlanPanel title={`${match.awayTeam?.name || t.away} ${language === 'en' ? 'Tactics' : '战术'}`} plan={session?.awayPlan} />
             </div>
             <div className="rounded border border-blue-100 bg-blue-50 p-3">
               <div className="flex items-center justify-between gap-4 text-sm text-blue-950">
                 <span>
-                  <span className="font-semibold">自动判定射门</span>
-                  <span className="ml-2 text-blue-800">开启后不弹出“上帝正在掷射门骰子”，系统自动掷骰；中场也会自动进入下半场。</span>
+                  <span className="font-semibold">{t.autoShot}</span>
+                  <span className="ml-2 text-blue-800">{t.autoShotDesc}</span>
                 </span>
                 <button type="button" role="switch" aria-checked={autoShotResolution} onClick={() => onAutoShotResolutionChange(!autoShotResolution)} className={`relative inline-flex h-8 w-16 flex-shrink-0 items-center rounded-full p-1 transition-colors ${autoShotResolution ? 'bg-green-500' : 'bg-gray-300'}`}>
                   <span className={`h-6 w-6 rounded-full bg-white shadow transition-transform ${autoShotResolution ? 'translate-x-8' : 'translate-x-0'}`} />
@@ -1879,9 +1986,9 @@ const AIMatchModal: React.FC<{
               </div>
             </div>
             <div className="rounded border p-4">
-              <h3 className="font-semibold text-gray-900">广播解说</h3>
+              <h3 className="font-semibold text-gray-900">{t.commentary}</h3>
               <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-                {commentaryEvents.length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">解说席正在连线，等待开球哨响。</div>}
+                {commentaryEvents.length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">{t.waitingBooth}</div>}
                 {commentaryEvents.map((event, index) => (
                   <div key={`${event.minute}-${index}`} className={`rounded p-3 text-sm ${event.type === 'goal' ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-gray-700'}`}>
                     <span className="font-semibold">{event.minute}'</span> {formatAIBroadcastText(event, session, language)}
@@ -1891,33 +1998,33 @@ const AIMatchModal: React.FC<{
             </div>
             {interactiveEvent && (
               <div className="rounded border border-purple-200 bg-purple-50 p-4">
-                <h3 className="font-semibold text-purple-900">关键射门判定</h3>
+                <h3 className="font-semibold text-purple-900">{t.shotDecision}</h3>
                 <p className="mt-1 text-sm text-purple-800">{interactiveEvent.minute}' {interactiveEvent.text}</p>
-                <p className="mt-1 text-xs text-purple-700">上帝摇骰子后，结果会反馈给 AI 解说继续比赛。</p>
+                <p className="mt-1 text-xs text-purple-700">{t.diceFeedback}</p>
               </div>
             )}
             {needsPenalty && <PenaltyShootoutPanel match={match} kicks={penaltyKicks} complete={penaltyComplete} submitting={saving} saved={false} onRoll={onPenaltyRoll} onManualRoll={onPenaltyManualRoll} />}
-            {penaltyDiceOpen && <PenaltyDiceModal title="AI 对决点球大战，上帝摇骰子决定射门和扑救。" onClose={onPenaltyDiceClose} onComplete={onPenaltyDiceComplete} />}
-            {interactiveEvent && <PenaltyDiceModal title="关键射门，上帝摇骰子决定射门与扑救。" description={`${interactiveEvent.minute}' ${interactiveEvent.text}`} onClose={onInteractiveDiceClose} onComplete={onInteractiveDiceComplete} />}
+            {penaltyDiceOpen && <PenaltyDiceModal variant="penalty" title={t.aiPenaltyDiceTitle} onClose={onPenaltyDiceClose} onComplete={onPenaltyDiceComplete} />}
+            {interactiveEvent && <PenaltyDiceModal variant="shot" title={t.shotDiceTitle} description={`${interactiveEvent.minute}' ${interactiveEvent.text}`} onClose={onInteractiveDiceClose} onComplete={onInteractiveDiceComplete} />}
             {session?.statistics && (
               <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-                <InfoCard icon={null} label="主队射门" value={String(session.statistics.homeShots || 0)} />
-                <InfoCard icon={null} label="客队射门" value={String(session.statistics.awayShots || 0)} />
-                <InfoCard icon={null} label="主队角球" value={String(session.statistics.homeCorners || 0)} />
-                <InfoCard icon={null} label="客队角球" value={String(session.statistics.awayCorners || 0)} />
+                <InfoCard icon={null} label={t.homeShots} value={String(session.statistics.homeShots || 0)} />
+                <InfoCard icon={null} label={t.awayShots} value={String(session.statistics.awayShots || 0)} />
+                <InfoCard icon={null} label={t.homeCorners} value={String(session.statistics.homeCorners || 0)} />
+                <InfoCard icon={null} label={t.awayCorners} value={String(session.statistics.awayCorners || 0)} />
               </div>
             )}
             <div className="rounded border bg-gray-50 p-4">
-              <h3 className="font-semibold text-gray-900">转播设置</h3>
+              <h3 className="font-semibold text-gray-900">{t.broadcastSettings}</h3>
               <div className="mt-3 grid gap-3 text-sm text-gray-700 md:grid-cols-3">
-                <div className="rounded bg-white p-3">压缩播放：{formatDurationOption(duration)}</div>
+                <div className="rounded bg-white p-3">{t.compressedPlayback}: {formatDurationOption(duration)}</div>
                 <label className="flex items-center gap-2 rounded bg-white p-3">
                   <input type="checkbox" checked={voiceEnabled} onChange={event => onVoiceChange(event.target.checked)} />
-                  广播语音播报
+                  {t.voice}
                 </label>
                 <label className="flex items-center gap-2 rounded bg-white p-3">
                   <input type="checkbox" checked={crowdEnabled} onChange={event => setCrowdEnabled(event.target.checked)} />
-                  观众背景音
+                  {t.crowd}
                 </label>
               </div>
             </div>
@@ -1926,14 +2033,14 @@ const AIMatchModal: React.FC<{
         {startOptionsOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
             <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
-              <h3 className="text-lg font-bold text-gray-900">赛前转播设置</h3>
-              <p className="mt-1 text-sm text-gray-600">实际比赛为 90 分钟，选择压缩播放用时。</p>
+              <h3 className="text-lg font-bold text-gray-900">{t.preMatchSettings}</h3>
+              <p className="mt-1 text-sm text-gray-600">{t.durationHelp}</p>
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {durations.map(item => <button key={item} onClick={() => onDurationChange(item)} className={`rounded px-3 py-2 text-sm ${duration === item ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{formatDurationOption(item)}</button>)}
               </div>
               <div className="mt-5 flex justify-end gap-2">
-                <button onClick={() => setStartOptionsOpen(false)} className="rounded bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">取消</button>
-                <button onClick={() => { setStartOptionsOpen(false); onStart(); }} className="rounded bg-purple-600 px-4 py-2 text-white hover:bg-purple-700">开球</button>
+                <button onClick={() => setStartOptionsOpen(false)} className="rounded bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">{t.cancel}</button>
+                <button onClick={() => { setStartOptionsOpen(false); onStart(); }} className="rounded bg-purple-600 px-4 py-2 text-white hover:bg-purple-700">{t.kickoff}</button>
               </div>
             </div>
           </div>
@@ -1944,6 +2051,8 @@ const AIMatchModal: React.FC<{
 };
 
 const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; complete: boolean; submitting: boolean; saved: boolean; onRoll: () => void; onManualRoll: () => void }> = ({ match, kicks, complete, submitting, saved, onRoll, onManualRoll }) => {
+  const { language } = useI18n();
+  const t = aiDuelText(language);
   const homeScore = getPenaltyScore(kicks, 'home');
   const awayScore = getPenaltyScore(kicks, 'away');
   const last = kicks[kicks.length - 1];
@@ -1953,9 +2062,9 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
   const currentRound = complete ? Math.max(1, Math.ceil(kicks.length / 2)) : last && last.keeper === undefined ? Math.floor((kicks.length - 1) / 2) + 1 : Math.floor(kicks.length / 2) + 1;
   const tiedAfterFive = kicks.length >= 10 && kicks.length % 2 === 0 && homeScore === awayScore && !complete;
   const roundCount = Math.max(5, Math.ceil((kicks.length + (tiedAfterFive ? 1 : 0)) / 2), currentRound);
-  const message = complete ? `点球大战完成：${homeScore}-${awayScore}` : `第 ${currentRound} 轮，${shooterTeam?.name || '射门方'} 射门，${keeperTeam?.name || '守门方'} 守门`;
+  const message = complete ? t.penaltyComplete(`${homeScore}-${awayScore}`) : t.penaltyRound(currentRound, shooterTeam?.name, keeperTeam?.name);
   const getKick = (round: number, side: ManualSideKey) => kicks[(round - 1) * 2 + (side === 'home' ? 0 : 1)];
-  const renderScoreBalls = (count: number) => count > 0 ? Array.from({ length: count }, (_, index) => <span key={index} aria-label="点球进球">⚽</span>) : <span className="text-gray-400">-</span>;
+  const renderScoreBalls = (count: number) => count > 0 ? Array.from({ length: count }, (_, index) => <span key={index} aria-label={t.goalResult}>⚽</span>) : <span className="text-gray-400">-</span>;
   const renderKick = (round: number, side: ManualSideKey) => {
     const kick = getKick(round, side);
     const team = side === 'home' ? match.homeTeam : match.awayTeam;
@@ -1964,15 +2073,15 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
       <div className={`flex flex-col gap-2 rounded border p-3 sm:flex-row sm:items-center sm:justify-between ${isCurrentSide ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-center gap-2 min-w-0">
           <TeamNameWithFlag team={team} flagClassName="w-5 h-4 flex-shrink-0" />
-          {isCurrentSide && <span className="text-xs text-amber-700">当前</span>}
+          {isCurrentSide && <span className="text-xs text-amber-700">{t.current}</span>}
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span>射门 {kick?.shooter ?? '-'}</span>
-          <span>扑救 {kick?.keeper ?? '-'}</span>
+          <span>{t.shoot} {kick?.shooter ?? '-'}</span>
+          <span>{t.saveAttempt} {kick?.keeper ?? '-'}</span>
           <span className={kick?.keeper === undefined ? 'text-gray-500' : kick.goal ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
-            {kick?.keeper === undefined ? '待进行' : (kick.shooter ?? 0) === 0 ? '打飞' : kick.goal ? '进球' : '扑出'}
+            {kick?.keeper === undefined ? t.pending : (kick.shooter ?? 0) === 0 ? t.missed : kick.goal ? t.goalResult : t.saved}
           </span>
-          {isCurrentSide && <button type="button" onClick={onManualRoll} disabled={submitting || saved || complete} className="rounded bg-gray-800 px-3 py-1 text-white hover:bg-gray-900 disabled:opacity-50">上帝摇骰子</button>}
+          {isCurrentSide && <button type="button" onClick={onManualRoll} disabled={submitting || saved || complete} className="rounded bg-gray-800 px-3 py-1 text-white hover:bg-gray-900 disabled:opacity-50">{t.manualDice}</button>}
         </div>
       </div>
     );
@@ -1982,8 +2091,8 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
     <div className="mt-5 border rounded-lg p-4 bg-amber-50 border-amber-200">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h3 className="font-semibold text-amber-900">点球大战</h3>
-          <p className="text-sm text-amber-800 mt-1">射门球员先掷，守门员后掷。射门点数大于或等于守门点数即进球，否则被扑出。</p>
+          <h3 className="font-semibold text-amber-900">{t.penaltyShootout}</h3>
+          <p className="text-sm text-amber-800 mt-1">{t.penaltyHelp}</p>
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
@@ -2004,7 +2113,7 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
         </div>
       </div>
       <div className="sticky top-0 z-10 mt-4 flex flex-wrap items-center gap-3 rounded border border-amber-200 bg-amber-50 py-3">
-        <button type="button" onClick={() => onRoll()} disabled={submitting || saved || complete} className="bg-amber-700 text-white px-4 py-2 rounded hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed">自动点球大战</button>
+        <button type="button" onClick={() => onRoll()} disabled={submitting || saved || complete} className="bg-amber-700 text-white px-4 py-2 rounded hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed">{t.autoPenalty}</button>
         <span className="text-sm text-amber-900">{message}</span>
       </div>
       <div className="mt-4 space-y-3">
@@ -2015,10 +2124,10 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
             <div key={round} className={`w-full rounded-lg border p-3 ${isCurrent ? 'border-amber-300 bg-gray-100' : 'border-gray-200 bg-white'}`}>
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 font-semibold text-gray-900">
-                  {isCurrent && <span aria-label="当前轮次">⚽</span>}
-                  <span>第 {round} 轮</span>
+                  {isCurrent && <span aria-label={t.currentRound}>⚽</span>}
+                  <span>{t.round(round)}</span>
                 </div>
-                {round > 5 && <span className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">加罚</span>}
+                {round > 5 && <span className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{t.extraRound}</span>}
               </div>
               <div className="space-y-2">
                 {renderKick(round, 'home')}
@@ -2032,8 +2141,9 @@ const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; compl
   );
 };
 
-const PenaltyDiceModal: React.FC<{ title: string; description?: string; onClose: () => void; onComplete: (shooter: number, keeper: number) => void }> = ({ title, description, onClose, onComplete }) => {
+const PenaltyDiceModal: React.FC<{ title: string; description?: string; variant?: 'penalty' | 'shot'; onClose: () => void; onComplete: (shooter: number, keeper: number) => void }> = ({ title, description, variant = 'penalty', onClose, onComplete }) => {
   const { language } = useI18n();
+  const t = aiDuelText(language);
   const [rolling, setRolling] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [shootValues, setShootValues] = useState([0, 0, 0, 0, 0, 0]);
@@ -2113,10 +2223,10 @@ const PenaltyDiceModal: React.FC<{ title: string; description?: string; onClose:
   };
   const resultText = shooterDie !== undefined && keeperDie !== undefined
     ? shooterDie === 0
-      ? '打飞'
+      ? t.missed
       : shooterDie >= keeperDie
-        ? '进球'
-        : '被扑出'
+        ? t.goalResult
+        : t.saved
     : '';
 
   const renderBoard = (label: string, panel: 'shoot' | 'save', result?: number) => (
@@ -2152,30 +2262,30 @@ const PenaltyDiceModal: React.FC<{ title: string; description?: string; onClose:
       <div className="w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-xl font-bold text-gray-900">{title.includes('点球') ? '上帝正在掷点球骰子' : '上帝正在掷射门骰子'}</h3>
+            <h3 className="text-xl font-bold text-gray-900">{variant === 'penalty' ? t.godPenaltyTitle : t.godShotTitle}</h3>
             <p className="text-sm text-gray-600">{title}</p>
           </div>
-          <button type="button" onClick={onClose} disabled={rolling} className="text-gray-500 hover:text-gray-800 disabled:opacity-50">关闭</button>
+          <button type="button" onClick={onClose} disabled={rolling} className="text-gray-500 hover:text-gray-800 disabled:opacity-50">{t.close}</button>
         </div>
         {description && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-            <div className="font-semibold">射门判定开始</div>
+            <div className="font-semibold">{t.shotDecisionStart}</div>
             <p className="mt-1 leading-6">{description}</p>
-            <p className="mt-2 text-xs text-amber-800">先点击“射门”决定这脚打门质量，再点击“扑救”决定门将反应。</p>
+            <p className="mt-2 text-xs text-amber-800">{t.shotDecisionHelp}</p>
           </div>
         )}
         <div className="grid gap-4 md:grid-cols-2">
-          {renderBoard('射门', 'shoot', shooterDie)}
-          {renderBoard('扑救', 'save', keeperDie)}
+          {renderBoard(t.shoot, 'shoot', shooterDie)}
+          {renderBoard(t.saveAttempt, 'save', keeperDie)}
         </div>
         <div className="mt-5 flex items-center justify-end gap-3">
-          {resultText && <span className={`mr-auto text-lg font-bold ${resultText === '进球' ? 'text-green-700' : 'text-red-700'}`}>{resultText}</span>}
+          {resultText && <span className={`mr-auto text-lg font-bold ${resultText === t.goalResult ? 'text-green-700' : 'text-red-700'}`}>{resultText}</span>}
           {shooterDie === undefined ? (
-            <button type="button" onClick={() => roll('shoot')} disabled={rolling} className="bg-amber-700 px-4 py-2 text-white rounded hover:bg-amber-800 disabled:opacity-50">{rolling ? '射门中...' : '射门'}</button>
+            <button type="button" onClick={() => roll('shoot')} disabled={rolling} className="bg-amber-700 px-4 py-2 text-white rounded hover:bg-amber-800 disabled:opacity-50">{rolling ? t.rollingShot : t.shoot}</button>
           ) : keeperDie !== undefined ? (
-            <button type="button" onClick={() => onComplete(shooterDie, keeperDie)} className="bg-blue-600 px-4 py-2 text-white rounded hover:bg-blue-700">关闭</button>
+            <button type="button" onClick={() => onComplete(shooterDie, keeperDie)} className="bg-blue-600 px-4 py-2 text-white rounded hover:bg-blue-700">{t.close}</button>
           ) : (
-            <button type="button" onClick={() => roll('save')} disabled={rolling || keeperDie !== undefined} className="bg-gray-800 px-4 py-2 text-white rounded hover:bg-gray-900 disabled:opacity-50">{rolling ? '扑救中...' : '扑救'}</button>
+            <button type="button" onClick={() => roll('save')} disabled={rolling || keeperDie !== undefined} className="bg-gray-800 px-4 py-2 text-white rounded hover:bg-gray-900 disabled:opacity-50">{rolling ? t.rollingSave : t.saveAttempt}</button>
           )}
         </div>
       </div>
