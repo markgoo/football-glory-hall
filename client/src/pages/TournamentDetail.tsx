@@ -172,7 +172,7 @@ const aiDuelText = (language: 'zh' | 'en') => ({
   probability: language === 'en' ? 'probability' : '发生率',
   debugPending: language === 'en' ? 'Start AI Duel to generate score budget and future events.' : '开始 AI 对决后会生成赛前比分预算和未来事件。',
   autoShot: language === 'en' ? 'Auto Shot Resolution' : '自动判定射门',
-  autoShotDesc: language === 'en' ? 'When enabled, the God Dice shot dialog will not open. The system rolls automatically and the second half starts automatically.' : '开启后不弹出“上帝正在掷射门骰子”，系统自动掷骰；中场也会自动进入下半场。',
+  autoShotDesc: language === 'en' ? 'When enabled, the God Dice shot dialog will not open. The system rolls automatically, the second half starts automatically, and knockout penalties are completed automatically.' : '开启后不弹出“上帝正在掷射门骰子”，系统自动掷骰；中场也会自动进入下半场；淘汰赛点球大战也会自动完成。',
   commentary: language === 'en' ? 'Radio Commentary' : '广播解说',
   shotDecision: language === 'en' ? 'Key Shot Decision' : '关键射门判定',
   diceFeedback: language === 'en' ? 'After God Dice resolves it, the result is sent back to the AI commentary.' : '上帝摇骰子后，结果会反馈给 AI 解说继续比赛。',
@@ -858,6 +858,21 @@ const TournamentDetail: React.FC = () => {
   };
   const rollAIShotDie = () => Math.floor(Math.random() * 7);
   const rollAISaveDie = () => Math.floor(Math.random() * 6) + 1;
+  const createAIPenaltyKick = (side: ManualSideKey): PenaltyKick => {
+    const shooter = rollAIShotDie();
+    const keeper = rollAISaveDie();
+    return { side, shooter, keeper, goal: shooter > 0 && shooter >= keeper };
+  };
+  const createAIPenaltyShootout = () => {
+    const kicks: PenaltyKick[] = [];
+    while (true) {
+      kicks.push(createAIPenaltyKick('home'));
+      kicks.push(createAIPenaltyKick('away'));
+      const rounds = kicks.length / 2;
+      if (rounds >= 5 && getPenaltyScore(kicks, 'home') !== getPenaltyScore(kicks, 'away')) break;
+    }
+    return kicks;
+  };
   const openAIMatch = async (match: Match) => {
     aiRunTokenRef.current += 1;
     setAiMatch(match);
@@ -955,6 +970,9 @@ const TournamentDetail: React.FC = () => {
         }
         if (current.status !== 'finished') await wait(Math.max(0, intervalMs - (Date.now() - stepStartedAt)));
       }
+      if (aiAutoShotResolutionRef.current && !aiMatch.groupName && current.homeScore === current.awayScore) {
+        setAiPenaltyKicks(createAIPenaltyShootout());
+      }
     } catch (error: any) {
       alert(error.response?.data?.error || error.message || aiText.aiFailed);
     } finally {
@@ -1028,7 +1046,11 @@ const TournamentDetail: React.FC = () => {
         current = created.data as AIMatchSession;
       }
       const response = await llmAPI.finishSession(current.id);
-      setAiSession(response.data as AIMatchSession);
+      const finishedSession = response.data as AIMatchSession;
+      setAiSession(finishedSession);
+      if (aiAutoShotResolutionRef.current && !aiMatch.groupName && finishedSession.homeScore === finishedSession.awayScore) {
+        setAiPenaltyKicks(createAIPenaltyShootout());
+      }
     } catch (error: any) {
       alert(error.response?.data?.error || error.message || aiText.quickFinishFailed);
     } finally {
@@ -1142,14 +1164,7 @@ const TournamentDetail: React.FC = () => {
   };
   const autoCompleteAIPenaltyShootout = () => {
     if (aiSaving || !aiMatch || !aiSession || aiSession.homeScore !== aiSession.awayScore || getPenaltyComplete(aiPenaltyKicks)) return;
-    const kicks: PenaltyKick[] = [];
-    while (true) {
-      kicks.push(createPenaltyKick('home'));
-      kicks.push(createPenaltyKick('away'));
-      const rounds = kicks.length / 2;
-      if (rounds >= 5 && getPenaltyScore(kicks, 'home') !== getPenaltyScore(kicks, 'away')) break;
-    }
-    setAiPenaltyKicks(kicks);
+    setAiPenaltyKicks(createAIPenaltyShootout());
   };
   const openPenaltyDice = () => {
     if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
