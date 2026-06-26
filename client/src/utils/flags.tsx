@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type React from 'react';
 import { Team } from '../types';
 import { unCountryCodeMap } from '../data/unCountries';
@@ -95,16 +95,22 @@ export const getCountryFlagUrl = (country?: string) => {
 
 const getProxiedImageUrl = (url?: string) => url ? `${API_BASE_URL}/assets/image?url=${encodeURIComponent(url)}` : undefined;
 
-const RemoteImage: React.FC<{ src?: string; alt: string; title?: string; className: string; fallbackClassName: string }> = ({ src, alt, title, className, fallbackClassName }) => {
+const RemoteImage: React.FC<{ src?: string; alt: string; title?: string; className: string; fallbackClassName: string; fallbackSrc?: string }> = ({ src, alt, title, className, fallbackClassName, fallbackSrc }) => {
   const [failed, setFailed] = useState(false);
   const [useDirectSource, setUseDirectSource] = useState(false);
-  const proxiedSrc = getProxiedImageUrl(src);
+  const effectiveSrc = !src || failed ? fallbackSrc : src;
+  const proxiedSrc = getProxiedImageUrl(effectiveSrc);
 
-  if (!src || failed) return <span className={fallbackClassName} title={title || alt} />;
+  useEffect(() => {
+    setFailed(false);
+    setUseDirectSource(false);
+  }, [src, fallbackSrc]);
+
+  if (!effectiveSrc) return <span className={fallbackClassName} title={title || alt} />;
 
   return (
     <img
-      src={useDirectSource ? src : proxiedSrc}
+      src={useDirectSource ? effectiveSrc : proxiedSrc}
       alt={alt}
       title={title}
       className={className}
@@ -119,7 +125,7 @@ const RemoteImage: React.FC<{ src?: string; alt: string; title?: string; classNa
 
 export const TeamFlag: React.FC<{ team?: Pick<Team, 'country' | 'name'>; className?: string }> = ({ team, className = 'w-5 h-4' }) => {
   const flagUrl = getCountryFlagUrl(team?.country);
-  return <RemoteImage src={flagUrl} alt={`${team?.country || team?.name || 'Team'} flag`} title={team?.country} className={`${className} inline-block rounded-sm object-cover border border-gray-200`} fallbackClassName={`${className} inline-flex rounded-sm bg-gray-200 border border-gray-300`} />;
+  return <RemoteImage src={flagUrl} fallbackSrc={getCountryFlagUrl('China')} alt={`${team?.country || team?.name || 'Team'} flag`} title={team?.country} className={`${className} inline-block rounded-sm object-cover border border-gray-200`} fallbackClassName={`${className} inline-flex rounded-sm bg-gray-200 border border-gray-300`} />;
 };
 
 export const TeamLogo: React.FC<{ team?: Pick<Team, 'logo' | 'name'>; className?: string }> = ({ team, className = 'w-5 h-5' }) => {

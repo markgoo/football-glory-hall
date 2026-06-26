@@ -292,9 +292,9 @@ export class MatchController {
       match.homePenaltyScore = penaltyResult?.homePenaltyScore;
       match.awayPenaltyScore = penaltyResult?.awayPenaltyScore;
       match.status = 'completed';
-      match.resultMode = 'manual';
+      match.resultMode = manualDetails?.source === 'ai_duel' ? 'ai' : 'manual';
       match.manualDetails = manualDetails;
-      match.events = [];
+      match.events = Array.isArray(manualDetails?.events) ? manualDetails.events : [];
       match.commentary = [
         `本场比赛使用手工掷骰计算。`,
         `${match.homeTeam.name} ${normalizedHomeScore}-${normalizedAwayScore} ${match.awayTeam.name}`,

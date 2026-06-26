@@ -48,6 +48,7 @@ export const tournamentAPI = {
   getById: (id: string) => api.get<Tournament>(`/tournaments/${id}`),
   create: (data: { name: string; description: string; type: string; teamCategory?: 'club' | 'national'; realTournamentTemplate?: 'fifa_world_cup_2026'; luckyReplacement?: { replacedTeam: string; replacementTeam: string }; teamCount: number; groupSize?: number; teamCountries?: string[]; startTime?: string; selectedTeams?: TeamCandidate[] }) =>
     api.post<Tournament>('/tournaments', data),
+  syncRealResults: (id: string) => api.post(`/tournaments/${id}/sync-real-results`),
   getTeamPool: (data: { teamCount: number; teamCountries?: string[]; teamCategory?: 'club' | 'national' }) =>
     api.post<TeamCandidate[]>('/tournaments/team-pool', data),
   update: (id: string, data: Partial<Tournament>) =>
@@ -94,6 +95,25 @@ export const adminAPI = {
   resetPassword: (id: string, password: string) =>
     api.post(`/admin/users/${id}/reset-password`, { password }),
   deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
+};
+
+export const llmAPI = {
+  getSettings: () => api.get('/llm/settings'),
+  saveSettings: (data: { apiBaseUrl: string; apiKey?: string; model: string; voiceEnabled?: boolean }) =>
+    api.put('/llm/settings', data),
+  getGlobalSettings: () => api.get('/llm/admin/global-settings'),
+  saveGlobalSettings: (data: { apiBaseUrl: string; apiKey?: string; model: string; voiceEnabled?: boolean; isGlobalEnabled?: boolean }) =>
+    api.put('/llm/admin/global-settings', data),
+  getPrompts: () => api.get('/llm/prompts'),
+  updatePrompt: (key: string, data: { title?: string; content?: string; isActive?: boolean }) =>
+    api.patch(`/llm/prompts/${key}`, data),
+  createSession: (matchId: string, data: { durationMinutes: number }) =>
+    api.post(`/llm/matches/${matchId}/sessions`, data),
+  stepSession: (sessionId: string) => api.post(`/llm/sessions/${sessionId}/step`),
+  appendSessionEvent: (sessionId: string, data: { minute: number; type: string; team: string; text: string; player?: string; dice?: any }) =>
+    api.post(`/llm/sessions/${sessionId}/events`, data),
+  finishSession: (sessionId: string) => api.post(`/llm/sessions/${sessionId}/finish`),
+  markSaved: (sessionId: string) => api.post(`/llm/sessions/${sessionId}/mark-saved`),
 };
 
 export default api;

@@ -9,6 +9,16 @@ export interface TeamStats {
   overall: number;
 }
 
+export interface TeamPlayer {
+  id?: number | string;
+  name: string;
+  age?: number;
+  number?: number;
+  position?: string;
+  photo?: string;
+  rating?: number;
+}
+
 @Entity('teams')
 export class Team {
   @PrimaryGeneratedColumn('uuid')
@@ -31,6 +41,18 @@ export class Team {
 
   @Column({ type: 'integer', nullable: true })
   founded?: number;
+
+  @Column({ type: 'integer', nullable: true })
+  externalApiId?: number;
+
+  @Column({ type: 'text', nullable: true })
+  playerSource?: 'api-football' | 'generated';
+
+  @Column({ type: 'datetime', nullable: true })
+  playersSyncedAt?: Date;
+
+  @Column({ type: 'simple-json', nullable: true })
+  players?: TeamPlayer[];
 
   @Column({ type: 'text', nullable: true })
   groupName?: string;

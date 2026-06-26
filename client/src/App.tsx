@@ -11,6 +11,8 @@ import TournamentDetail from './pages/TournamentDetail';
 import MatchViewer from './pages/MatchViewer';
 import GloryHall from './pages/GloryHall';
 import AdminUsers from './pages/AdminUsers';
+import AdminLLM from './pages/AdminLLM';
+import LLMSettings from './pages/LLMSettings';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -65,10 +67,26 @@ function App() {
                 }
               />
               <Route
+                path="/llm-settings"
+                element={
+                  <ProtectedRoute>
+                    <LLMSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/admin/users"
                 element={
                   <ProtectedRoute requireAdmin>
                     <AdminUsers />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/llm"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminLLM />
                   </ProtectedRoute>
                 }
               />

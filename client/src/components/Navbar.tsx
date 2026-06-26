@@ -38,23 +38,19 @@ const Navbar: React.FC = () => {
     }
   };
 
+  const closeMobileMenu = () => setIsMenuOpen(false);
+
   const UserActions = () => (
     <div className="flex items-center space-x-4">
       <div className="flex items-center space-x-2">
         <User className="h-5 w-5 text-gray-600" />
         <span className="text-gray-700">{user?.username}</span>
       </div>
-      <button
-        onClick={() => setShowPasswordDialog(true)}
-        className="flex items-center space-x-1 text-gray-700 hover:text-blue-600 px-3 py-2"
-      >
+      <button onClick={() => setShowPasswordDialog(true)} className="flex items-center space-x-1 px-3 py-2 text-gray-700 hover:text-blue-600">
         <KeyRound className="h-4 w-4" />
         <span>修改密码</span>
       </button>
-      <button
-        onClick={handleLogout}
-        className="flex items-center space-x-1 text-red-600 hover:text-red-800 px-3 py-2"
-      >
+      <button onClick={handleLogout} className="flex items-center space-x-1 px-3 py-2 text-red-600 hover:text-red-800">
         <LogOut className="h-4 w-4" />
         <span>退出</span>
       </button>
@@ -63,8 +59,8 @@ const Navbar: React.FC = () => {
 
   return (
     <nav className="bg-white shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 justify-between">
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2">
               <Trophy className="h-8 w-8 text-blue-600" />
@@ -72,26 +68,27 @@ const Navbar: React.FC = () => {
             </Link>
           </div>
 
-          <div className="hidden md:flex items-center space-x-8">
-            <Link to="/" className="text-gray-700 hover:text-blue-600 px-3 py-2">首页</Link>
-            <Link to="/glory-hall" className="text-gray-700 hover:text-blue-600 px-3 py-2">荣耀殿堂</Link>
-
+          <div className="hidden items-center space-x-6 md:flex">
+            <Link to="/" className="px-3 py-2 text-gray-700 hover:text-blue-600">首页</Link>
+            <Link to="/glory-hall" className="px-3 py-2 text-gray-700 hover:text-blue-600">荣耀殿堂</Link>
             {user ? (
               <>
-                <Link to="/tournaments" className="text-gray-700 hover:text-blue-600 px-3 py-2">杯赛管理</Link>
-                {user.role === 'admin' && <Link to="/admin/users" className="text-gray-700 hover:text-blue-600 px-3 py-2">用户管理</Link>}
+                <Link to="/tournaments" className="px-3 py-2 text-gray-700 hover:text-blue-600">杯赛管理</Link>
+                <Link to="/llm-settings" className="px-3 py-2 text-gray-700 hover:text-blue-600">AI配置</Link>
+                {user.role === 'admin' && <Link to="/admin/users" className="px-3 py-2 text-gray-700 hover:text-blue-600">用户管理</Link>}
+                {user.role === 'admin' && <Link to="/admin/llm" className="px-3 py-2 text-gray-700 hover:text-blue-600">LLM管理</Link>}
                 <UserActions />
               </>
             ) : (
               <div className="flex items-center space-x-4">
-                <Link to="/login" className="text-gray-700 hover:text-blue-600 px-3 py-2">登录</Link>
-                <Link to="/register" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">注册</Link>
+                <Link to="/login" className="px-3 py-2 text-gray-700 hover:text-blue-600">登录</Link>
+                <Link to="/register" className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">注册</Link>
               </div>
             )}
           </div>
 
-          <div className="md:hidden flex items-center">
-            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-gray-700 hover:text-blue-600 p-2">
+          <div className="flex items-center md:hidden">
+            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 text-gray-700 hover:text-blue-600">
               <Menu className="h-6 w-6" />
             </button>
           </div>
@@ -99,27 +96,28 @@ const Navbar: React.FC = () => {
 
         {isMenuOpen && (
           <div className="md:hidden">
-            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-              <Link to="/" className="block px-3 py-2 text-gray-700 hover:text-blue-600">首页</Link>
-              <Link to="/glory-hall" className="block px-3 py-2 text-gray-700 hover:text-blue-600">荣耀殿堂</Link>
-
+            <div className="space-y-1 px-2 pb-3 pt-2 sm:px-3">
+              <Link to="/" onClick={closeMobileMenu} className="block px-3 py-2 text-gray-700 hover:text-blue-600">首页</Link>
+              <Link to="/glory-hall" onClick={closeMobileMenu} className="block px-3 py-2 text-gray-700 hover:text-blue-600">荣耀殿堂</Link>
               {user ? (
                 <>
-                  <Link to="/tournaments" className="block px-3 py-2 text-gray-700 hover:text-blue-600">杯赛管理</Link>
-                  {user.role === 'admin' && <Link to="/admin/users" className="block px-3 py-2 text-gray-700 hover:text-blue-600">用户管理</Link>}
+                  <Link to="/tournaments" onClick={closeMobileMenu} className="block px-3 py-2 text-gray-700 hover:text-blue-600">杯赛管理</Link>
+                  <Link to="/llm-settings" onClick={closeMobileMenu} className="block px-3 py-2 text-gray-700 hover:text-blue-600">AI配置</Link>
+                  {user.role === 'admin' && <Link to="/admin/users" onClick={closeMobileMenu} className="block px-3 py-2 text-gray-700 hover:text-blue-600">用户管理</Link>}
+                  {user.role === 'admin' && <Link to="/admin/llm" onClick={closeMobileMenu} className="block px-3 py-2 text-gray-700 hover:text-blue-600">LLM管理</Link>}
                   <div className="border-t pt-2">
                     <div className="flex items-center px-3 py-2">
-                      <User className="h-5 w-5 text-gray-600 mr-2" />
+                      <User className="mr-2 h-5 w-5 text-gray-600" />
                       <span className="text-gray-700">{user.username}</span>
                     </div>
-                    <button onClick={() => setShowPasswordDialog(true)} className="block w-full text-left px-3 py-2 text-gray-700 hover:text-blue-600">修改密码</button>
-                    <button onClick={handleLogout} className="block w-full text-left px-3 py-2 text-red-600 hover:text-red-800">退出</button>
+                    <button onClick={() => setShowPasswordDialog(true)} className="block w-full px-3 py-2 text-left text-gray-700 hover:text-blue-600">修改密码</button>
+                    <button onClick={handleLogout} className="block w-full px-3 py-2 text-left text-red-600 hover:text-red-800">退出</button>
                   </div>
                 </>
               ) : (
                 <>
-                  <Link to="/login" className="block px-3 py-2 text-gray-700 hover:text-blue-600">登录</Link>
-                  <Link to="/register" className="block px-3 py-2 text-blue-600 hover:text-blue-800">注册</Link>
+                  <Link to="/login" onClick={closeMobileMenu} className="block px-3 py-2 text-gray-700 hover:text-blue-600">登录</Link>
+                  <Link to="/register" onClick={closeMobileMenu} className="block px-3 py-2 text-blue-600 hover:text-blue-800">注册</Link>
                 </>
               )}
             </div>
@@ -132,24 +130,11 @@ const Navbar: React.FC = () => {
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h2 className="text-xl font-bold text-gray-900">修改密码</h2>
             <p className="mt-1 text-sm text-gray-600">需要输入当前密码。</p>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              className="input mt-4"
-              placeholder="当前密码"
-              autoFocus
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              className="input mt-3"
-              placeholder="新密码，至少 6 位"
-            />
+            <input type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="input mt-4" placeholder="当前密码" autoFocus />
+            <input type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} className="input mt-3" placeholder="新密码，至少 6 位" />
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowPasswordDialog(false)} className="px-4 py-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">取消</button>
-              <button type="button" onClick={submitPassword} disabled={savingPassword || !currentPassword || newPassword.length < 6} className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+              <button type="button" onClick={() => setShowPasswordDialog(false)} className="rounded bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">取消</button>
+              <button type="button" onClick={submitPassword} disabled={savingPassword || !currentPassword || newPassword.length < 6} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50">
                 {savingPassword ? '保存中...' : '保存'}
               </button>
             </div>

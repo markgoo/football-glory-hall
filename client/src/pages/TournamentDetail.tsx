@@ -1,9 +1,10 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Calendar, ChevronDown, Play, Search, Star, Trophy, Users } from 'lucide-react';
-import { matchAPI, tournamentAPI } from '../services/api';
+import { llmAPI, matchAPI, tournamentAPI } from '../services/api';
 import { Match, Team, Tournament } from '../types';
 import { TeamFlag, TeamLogo, TeamNameWithFlag } from '../utils/flags';
+import { useAuth } from '../contexts/AuthContext';
 
 type TournamentDetailData = Tournament & { matches?: Match[] };
 type MatchStatusFilter = 'all' | 'scheduled' | 'completed';
@@ -16,6 +17,8 @@ type ManualRollSession = { targetDie: number; clicks: number; currentTick: numbe
 type PenaltyKick = { side: ManualSideKey; shooter?: number; keeper?: number; goal?: boolean };
 type BracketColumn = { title: string; matches: Match[] };
 type ChampionInfo = { name: string; source: 'official' | 'final' };
+type AIMatchSession = { id: string; durationMinutes: number; status: 'ready' | 'running' | 'finished' | 'saved'; currentMinute: number; homeScore: number; awayScore: number; homePlan?: any; awayPlan?: any; events?: Array<{ minute: number; type: string; team: string; player?: string; key?: boolean; text: string }>; statistics?: any; engineState?: any; model?: string };
+type AIInteractiveEvent = { minute: number; team: ManualSideKey; player?: string; text: string };
 type GroupStanding = {
   team: Team;
   played: number;
@@ -30,6 +33,13 @@ type GroupStanding = {
 
 const KNOCKOUT_GROUP_NAME = '淘汰赛';
 const UNGROUPED_NAME = '未分组';
+const AI_MATCH_TOTAL_MINUTES = 90;
+const formatAIMatchClock = (value: number) => {
+  const minute = Math.floor(value);
+  const second = Math.floor((value - minute) * 60);
+  return `${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+};
+const formatAIEventText = (text?: string) => String(text || '').replace(/^上帝摇骰子判定[:：]\s*/, '');
 const emptyManualGame = (): ManualGame => ({ firstHalf: {}, secondHalf: {} });
 const getPenaltyScore = (kicks: PenaltyKick[], side: ManualSideKey) => kicks.filter(kick => kick.side === side && kick.goal).length;
 const getPenaltyComplete = (kicks: PenaltyKick[]) => {
@@ -186,6 +196,8 @@ const calculateGroupStandings = (teams: Team[], matches: Match[]) => {
   return standings;
 };
 
+const wait = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms));
+
 const getCompletedGroupNames = (matches: Match[]) => {
   const counts = matches.filter(match => match.groupName).reduce<Record<string, { total: number; completed: number }>>((groups, match) => {
     const groupName = match.groupName as string;
@@ -255,10 +267,12 @@ const getChampionInfo = (tournament?: TournamentDetailData | null, finalMatch?: 
 
 const TournamentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [tournament, setTournament] = useState<TournamentDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [startingMatch, setStartingMatch] = useState<string | null>(null);
   const [startingAll, setStartingAll] = useState(false);
+  const [syncingRealResults, setSyncingRealResults] = useState(false);
   const [manualMatch, setManualMatch] = useState<Match | null>(null);
   const [manualGame, setManualGame] = useState<ManualGame>(emptyManualGame());
   const [submittingManual, setSubmittingManual] = useState(false);
@@ -267,6 +281,20 @@ const TournamentDetail: React.FC = () => {
   const [manualSaved, setManualSaved] = useState(false);
   const [penaltyKicks, setPenaltyKicks] = useState<PenaltyKick[]>([]);
   const [penaltyDiceOpen, setPenaltyDiceOpen] = useState(false);
+  const [aiMatch, setAiMatch] = useState<Match | null>(null);
+  const [aiSession, setAiSession] = useState<AIMatchSession | null>(null);
+  const [aiDuration, setAiDuration] = useState(8);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiFinishing, setAiFinishing] = useState(false);
+  const [aiVoiceEnabled, setAiVoiceEnabled] = useState(false);
+  const [aiHalftimePaused, setAiHalftimePaused] = useState(false);
+  const [aiPenaltyKicks, setAiPenaltyKicks] = useState<PenaltyKick[]>([]);
+  const [aiPenaltyDiceOpen, setAiPenaltyDiceOpen] = useState(false);
+  const [aiInteractiveEvent, setAiInteractiveEvent] = useState<AIInteractiveEvent | null>(null);
+  const aiHalftimeResolver = useRef<(() => void) | null>(null);
+  const aiInteractiveResolver = useRef<((result?: { shooter: number; keeper: number }) => void) | null>(null);
+  const aiRunTokenRef = useRef(0);
   const manualRollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const manualRollSessions = useRef<Record<string, ManualRollSession>>({});
   const [query, setQuery] = useState('');
@@ -326,6 +354,7 @@ const TournamentDetail: React.FC = () => {
   const roundOptions = useMemo(() => Array.from(new Set(scheduleMatches.map(match => match.round))).sort((a, b) => a - b), [scheduleMatches]);
   const completedMatchesCount = useMemo(() => matches.filter(match => match.status === 'completed').length, [matches]);
   const nextScheduledMatch = useMemo(() => scheduleMatches.find(match => match.status === 'scheduled'), [scheduleMatches]);
+  const canSyncRealResults = Boolean(tournament?.realTournamentTemplate) && matches.length > 0 && matches.every(match => match.status === 'scheduled');
   const favoriteTeams = useMemo(() => teams.filter(team => favoriteTeamIds.includes(team.id)), [teams, favoriteTeamIds]);
 
   const filteredMatches = useMemo(() => {
@@ -358,6 +387,19 @@ const TournamentDetail: React.FC = () => {
       await fetchTournament();
     } finally { setStartingAll(false); }
   };
+  const handleSyncRealResults = async () => {
+    if (!tournament || syncingRealResults) return;
+    setSyncingRealResults(true);
+    try {
+      const response = await tournamentAPI.syncRealResults(tournament.id);
+      await fetchTournament();
+      alert(`同步完成，更新 ${response.data.updatedCount || 0} 场比赛`);
+    } catch (error: any) {
+      alert(error.response?.data?.error || error.message || '同步真实比分失败');
+    } finally {
+      setSyncingRealResults(false);
+    }
+  };
   const openManualMatch = (match: Match) => {
     setManualMatch(match);
     setManualGame(createManualGame(match));
@@ -366,6 +408,182 @@ const TournamentDetail: React.FC = () => {
     setManualSaved(false);
     setPenaltyKicks([]);
     setPenaltyDiceOpen(false);
+  };
+  const speakAIEvents = (session: AIMatchSession, previousEventCount: number) => {
+    if (!aiVoiceEnabled || !('speechSynthesis' in window)) return;
+    const text = (session.events || []).slice(previousEventCount).map(event => event.text).join('。');
+    if (!text) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.rate = 1.18;
+    utterance.pitch = 1.12;
+    utterance.volume = 0.95;
+    window.speechSynthesis.speak(utterance);
+  };
+  const openAIMatch = async (match: Match) => {
+    aiRunTokenRef.current += 1;
+    setAiMatch(match);
+    setAiSession(null);
+    setAiDuration(8);
+    setAiRunning(false);
+    setAiSaving(false);
+    setAiFinishing(false);
+    setAiHalftimePaused(false);
+    setAiPenaltyKicks([]);
+    setAiPenaltyDiceOpen(false);
+    setAiInteractiveEvent(null);
+    try {
+      const settings = await llmAPI.getSettings();
+      setAiVoiceEnabled(!!settings.data?.voiceEnabled);
+    } catch {
+      setAiVoiceEnabled(false);
+    }
+  };
+  const startAIDuel = async () => {
+    if (!aiMatch || aiRunning) return;
+    const runToken = aiRunTokenRef.current + 1;
+    aiRunTokenRef.current = runToken;
+    setAiRunning(true);
+    try {
+      const created = await llmAPI.createSession(aiMatch.id, { durationMinutes: aiDuration });
+      let current = created.data as AIMatchSession;
+      let halftimeHandled = false;
+      setAiSession(current);
+      const intervalMs = Math.max(250, Math.round((aiDuration * 60 * 1000) / (AI_MATCH_TOTAL_MINUTES / 5)));
+      while (current.status !== 'finished' && current.status !== 'saved') {
+        if (aiRunTokenRef.current !== runToken) return;
+        const previousEventCount = current.events?.length || 0;
+        const response = await llmAPI.stepSession(current.id);
+        if (aiRunTokenRef.current !== runToken) return;
+        current = response.data as AIMatchSession;
+        setAiSession(current);
+        speakAIEvents(current, previousEventCount);
+        const interactiveEvent = (current.events || []).slice(previousEventCount).find(event => {
+          const text = event.text || '';
+          const alreadyResolved = /破门|进球|入网|得分|比分变为|改写比分/.test(text);
+          return event.type !== 'goal' && !alreadyResolved && (['chance', 'save', 'penalty'].includes(event.type) || /射门|扑救|单刀|远射|头球|点球/.test(text));
+        });
+        if (interactiveEvent) {
+          const team: ManualSideKey = interactiveEvent.team === 'away' ? 'away' : 'home';
+          setAiInteractiveEvent({ minute: interactiveEvent.minute, team, player: interactiveEvent.player, text: interactiveEvent.text });
+          setAiRunning(false);
+          const diceResult = await new Promise<{ shooter: number; keeper: number } | undefined>(resolve => { aiInteractiveResolver.current = resolve; });
+          if (aiRunTokenRef.current !== runToken) return;
+          setAiInteractiveEvent(null);
+          setAiRunning(true);
+          if (diceResult) {
+            const goal = diceResult.shooter > 0 && diceResult.shooter >= diceResult.keeper;
+            const cleanText = interactiveEvent.text.replace(new RegExp(`^第?${interactiveEvent.minute}['’分钟\\s，,：:]*`), '');
+            const feedbackText = `上帝摇骰子判定：${cleanText}。射门 ${diceResult.shooter}，扑救 ${diceResult.keeper}，${diceResult.shooter === 0 ? '射门打飞' : goal ? '皮球入网' : '门将扑出'}。`;
+            const feedback = await llmAPI.appendSessionEvent(current.id, {
+              minute: interactiveEvent.minute,
+              type: goal ? 'goal' : 'save',
+              team,
+              player: interactiveEvent.player,
+              text: feedbackText,
+              dice: diceResult
+            });
+            current = feedback.data as AIMatchSession;
+            setAiSession(current);
+          }
+        }
+        if (!halftimeHandled && current.currentMinute >= 45 && current.status !== 'finished') {
+          halftimeHandled = true;
+          setAiHalftimePaused(true);
+          setAiRunning(false);
+          if (aiVoiceEnabled && 'speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance('上半场比赛结束，双方球员回到更衣室，中场休息后我们继续。');
+            utterance.lang = 'zh-CN';
+            utterance.rate = 1.12;
+            utterance.pitch = 1.08;
+            window.speechSynthesis.speak(utterance);
+          }
+          await new Promise<void>(resolve => { aiHalftimeResolver.current = resolve; });
+          if (aiRunTokenRef.current !== runToken) return;
+          setAiHalftimePaused(false);
+          setAiRunning(true);
+        }
+        if (current.status !== 'finished') await wait(intervalMs);
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.error || error.message || 'AI 对决失败');
+    } finally {
+      setAiRunning(false);
+    }
+  };
+  const continueAISecondHalf = () => {
+    setAiHalftimePaused(false);
+    setAiRunning(true);
+    aiHalftimeResolver.current?.();
+    aiHalftimeResolver.current = null;
+  };
+  const saveAIDuel = async () => {
+    if (!aiMatch || !aiSession || aiSession.status !== 'finished') return;
+    const aiNeedsPenalty = !aiMatch.groupName && aiSession.homeScore === aiSession.awayScore;
+    const aiPenaltyComplete = getPenaltyComplete(aiPenaltyKicks);
+    if (aiNeedsPenalty && !aiPenaltyComplete) {
+      alert('淘汰赛平局需要先完成点球大战');
+      return;
+    }
+    setAiSaving(true);
+    try {
+      await matchAPI.manual(aiMatch.id, {
+        homeScore: aiSession.homeScore,
+        awayScore: aiSession.awayScore,
+        homePenaltyScore: aiNeedsPenalty ? getPenaltyScore(aiPenaltyKicks, 'home') : undefined,
+        awayPenaltyScore: aiNeedsPenalty ? getPenaltyScore(aiPenaltyKicks, 'away') : undefined,
+        manualDetails: {
+          source: 'ai_duel',
+          durationMinutes: aiSession.durationMinutes,
+          model: aiSession.model,
+          homePlan: aiSession.homePlan,
+          awayPlan: aiSession.awayPlan,
+          events: aiSession.events || [],
+          penalties: aiNeedsPenalty ? aiPenaltyKicks : undefined,
+          statistics: aiSession.statistics || {},
+          commentary: (aiSession.events || []).map(event => `${event.minute}' ${event.text}`)
+        }
+      });
+      await llmAPI.markSaved(aiSession.id);
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      setAiMatch(null);
+      setAiSession(null);
+      setAiHalftimePaused(false);
+      setAiPenaltyKicks([]);
+      setAiPenaltyDiceOpen(false);
+      setAiInteractiveEvent(null);
+      await fetchTournament();
+    } catch (error: any) {
+      alert(error.response?.data?.error || error.message || '保存 AI 对决结果失败');
+    } finally {
+      setAiSaving(false);
+    }
+  };
+  const finishAIDuel = async () => {
+    if (!aiMatch || aiFinishing) return;
+    aiRunTokenRef.current += 1;
+    setAiFinishing(true);
+    setAiRunning(false);
+    setAiHalftimePaused(false);
+    aiHalftimeResolver.current?.();
+    aiInteractiveResolver.current?.();
+    aiHalftimeResolver.current = null;
+    aiInteractiveResolver.current = null;
+    setAiInteractiveEvent(null);
+    try {
+      let current = aiSession;
+      if (!current) {
+        const created = await llmAPI.createSession(aiMatch.id, { durationMinutes: aiDuration });
+        current = created.data as AIMatchSession;
+      }
+      const response = await llmAPI.finishSession(current.id);
+      setAiSession(response.data as AIMatchSession);
+    } catch (error: any) {
+      alert(error.response?.data?.error || error.message || '快速完成失败');
+    } finally {
+      setAiFinishing(false);
+    }
   };
   const updateManualRoll = (half: ManualHalfKey, side: ManualSideKey, updater: (roll: ManualRoll) => ManualRoll) => {
     if (!manualMatch) return;
@@ -472,6 +690,17 @@ const TournamentDetail: React.FC = () => {
     }
     setPenaltyKicks(kicks);
   };
+  const autoCompleteAIPenaltyShootout = () => {
+    if (aiSaving || !aiMatch || !aiSession || aiSession.homeScore !== aiSession.awayScore || getPenaltyComplete(aiPenaltyKicks)) return;
+    const kicks: PenaltyKick[] = [];
+    while (true) {
+      kicks.push(createPenaltyKick('home'));
+      kicks.push(createPenaltyKick('away'));
+      const rounds = kicks.length / 2;
+      if (rounds >= 5 && getPenaltyScore(kicks, 'home') !== getPenaltyScore(kicks, 'away')) break;
+    }
+    setAiPenaltyKicks(kicks);
+  };
   const openPenaltyDice = () => {
     if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
     setPenaltyDiceOpen(true);
@@ -479,6 +708,16 @@ const TournamentDetail: React.FC = () => {
   const completeManualPenaltyKick = (shooter: number, keeper: number) => {
     if (submittingManual || manualSaved || !manualNeedsPenalty || penaltyComplete) return;
     setPenaltyKicks(current => {
+      const last = current[current.length - 1];
+      const side: ManualSideKey = !last || (last.shooter !== undefined && last.keeper !== undefined) ? (current.length % 2 === 0 ? 'home' : 'away') : last.side;
+      const completedKick = { side, shooter, keeper, goal: shooter > 0 && shooter >= keeper };
+      if (!last || (last.shooter !== undefined && last.keeper !== undefined)) return [...current, completedKick];
+      return current.map((kick, index) => index === current.length - 1 ? completedKick : kick);
+    });
+  };
+  const completeAIPenaltyKick = (shooter: number, keeper: number) => {
+    if (aiSaving || !aiMatch || !aiSession || aiSession.homeScore !== aiSession.awayScore || getPenaltyComplete(aiPenaltyKicks)) return;
+    setAiPenaltyKicks(current => {
       const last = current[current.length - 1];
       const side: ManualSideKey = !last || (last.shooter !== undefined && last.keeper !== undefined) ? (current.length % 2 === 0 ? 'home' : 'away') : last.side;
       const completedKick = { side, shooter, keeper, goal: shooter > 0 && shooter >= keeper };
@@ -585,10 +824,11 @@ const TournamentDetail: React.FC = () => {
           </CollapsibleSection>
         )}
         {matches.length > 0 && (
-          <section id="match-results" className="mt-8 scroll-mt-4">
+          <section id="match-schedule" className="mt-8 scroll-mt-4">
             <div className="flex justify-between items-center mb-4">
               <div><h3 className="text-xl font-semibold text-gray-900">比赛安排</h3><p className="text-sm text-gray-600 mt-1">当前显示 {filteredMatches.length} / {scheduleMatches.length} 场比赛{favoriteTeams.length > 0 && `，关注 ${favoriteTeams.map(team => team.name).join('、')}`}</p></div>
               <div className="flex flex-wrap items-center justify-end gap-2">
+                {canSyncRealResults && <button onClick={handleSyncRealResults} disabled={syncingRealResults} className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{syncingRealResults ? '同步中...' : '同步真实比分'}</button>}
                 {nextScheduledMatch && <button onClick={handleJumpToNextScheduledMatch} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center"><Play className="w-4 h-4 mr-2" />下一场比赛</button>}
                 {filteredMatches.some(match => match.status === 'scheduled' && match.homeTeam && match.awayTeam) && <button onClick={handleStartAllMatches} disabled={startingAll} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50 flex items-center"><Play className="w-4 h-4 mr-2" />{startingAll ? '正在开始...' : '开始当前筛选比赛'}</button>}
               </div>
@@ -619,7 +859,7 @@ const TournamentDetail: React.FC = () => {
                           <div key={`${round}-${name}`}>
                             <div className="text-sm font-medium text-gray-700 mb-2">{name}</div>
                             <div className="space-y-3">
-                          {groupMatches.map(match => <MatchRow key={match.id} match={match} favoriteTeamIds={favoriteTeamIds} startingMatch={startingMatch} onStart={handleStartMatch} onManualStart={openManualMatch} />)}
+                          {groupMatches.map(match => <MatchRow key={match.id} match={match} favoriteTeamIds={favoriteTeamIds} startingMatch={startingMatch} onStart={handleStartMatch} onManualStart={openManualMatch} onAIStart={openAIMatch} />)}
                             </div>
                           </div>
                         ))}
@@ -634,6 +874,7 @@ const TournamentDetail: React.FC = () => {
         )}
       </div>
       {manualMatch && <ManualMatchModal match={manualMatch} game={manualGame} submitting={submittingManual} complete={manualReadyToSave} normalComplete={manualGameComplete} needsPenalty={manualNeedsPenalty} penaltyComplete={penaltyComplete} penaltyKicks={penaltyKicks} penaltyDiceOpen={penaltyDiceOpen} rollingCount={manualRollingCount} rollAllUsed={manualRollAllUsed} anyRollStarted={manualAnyRollStarted} autoSubmit={manualAutoSubmit} saved={manualSaved} onClose={() => { clearAllManualRollTimers(); setManualAutoSubmit(false); setManualRollAllUsed(false); setManualSaved(false); setPenaltyKicks([]); setPenaltyDiceOpen(false); setManualMatch(null); }} onRoll={rollManualSide} onRollAll={rollAllManualSides} onRequestLanding={requestManualLanding} onPenaltyRoll={autoCompletePenaltyShootout} onPenaltyManualRoll={openPenaltyDice} onPenaltyDiceClose={() => setPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeManualPenaltyKick(shooter, keeper); setPenaltyDiceOpen(false); }} onSubmit={submitManualMatch} getScore={getManualScore} />}
+      {aiMatch && <AIMatchModal match={aiMatch} session={aiSession} duration={aiDuration} running={aiRunning} saving={aiSaving} finishing={aiFinishing} voiceEnabled={aiVoiceEnabled} halftimePaused={aiHalftimePaused} interactiveEvent={aiInteractiveEvent} penaltyKicks={aiPenaltyKicks} penaltyDiceOpen={aiPenaltyDiceOpen} isAdmin={user?.role === 'admin'} onDurationChange={setAiDuration} onVoiceChange={setAiVoiceEnabled} onContinueSecondHalf={continueAISecondHalf} onInteractiveDiceClose={() => { aiInteractiveResolver.current?.(); aiInteractiveResolver.current = null; setAiInteractiveEvent(null); setAiRunning(true); }} onInteractiveDiceComplete={(shooter, keeper) => { aiInteractiveResolver.current?.({ shooter, keeper }); aiInteractiveResolver.current = null; }} onStart={startAIDuel} onFinish={finishAIDuel} onSave={saveAIDuel} onPenaltyRoll={autoCompleteAIPenaltyShootout} onPenaltyManualRoll={() => setAiPenaltyDiceOpen(true)} onPenaltyDiceClose={() => setAiPenaltyDiceOpen(false)} onPenaltyDiceComplete={(shooter, keeper) => { completeAIPenaltyKick(shooter, keeper); setAiPenaltyDiceOpen(false); }} onClose={() => { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); aiHalftimeResolver.current?.(); aiInteractiveResolver.current?.(); aiHalftimeResolver.current = null; aiInteractiveResolver.current = null; setAiMatch(null); setAiSession(null); setAiRunning(false); setAiHalftimePaused(false); setAiInteractiveEvent(null); setAiPenaltyKicks([]); setAiPenaltyDiceOpen(false); }} />}
       <FloatingScrollToolbar onTop={scrollToPageTop} onBottom={scrollToPageBottom} onNextMatch={handleJumpToNextScheduledMatch} hasNextMatch={Boolean(nextScheduledMatch)} />
     </div>
   );
@@ -798,10 +1039,421 @@ const MatchToolbar: React.FC<{ query: string; onQueryChange: (value: string) => 
   <div className="bg-gray-50 border rounded-lg p-4 mb-4"><div className="grid md:grid-cols-6 gap-3"><div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" /><input value={query} onChange={(event) => onQueryChange(event.target.value)} className="input pl-9" placeholder="搜索球队" /></div><select value={groupFilter} onChange={(event) => onGroupFilterChange(event.target.value)} className="input"><option value="all">全部阶段</option>{groupOptions.map(name => <option key={name} value={name}>{name}</option>)}</select><select value={roundFilter} onChange={(event) => onRoundFilterChange(event.target.value)} className="input"><option value="all">全部轮次</option>{roundOptions.map(round => <option key={round} value={round}>第 {round} 轮</option>)}</select><select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value as MatchStatusFilter)} className="input"><option value="all">全部状态</option><option value="scheduled">待进行</option><option value="completed">已结束</option></select><select value={sortMode} onChange={(event) => onSortModeChange(event.target.value as MatchSortMode)} className="input"><option value="round-asc">轮次优先</option><option value="round-desc">轮次降序</option><option value="team-asc">主队名称</option></select></div><label className={`mt-3 inline-flex items-center gap-2 text-sm ${hasFavorites ? 'text-gray-700' : 'text-gray-400'}`}><input type="checkbox" checked={onlyFavorites} disabled={!hasFavorites} onChange={(event) => onOnlyFavoritesChange(event.target.checked)} />只看关注球队的比赛</label></div>
 );
 
-const MatchRow: React.FC<{ match: Match; favoriteTeamIds: string[]; startingMatch: string | null; onStart: (matchId: string) => void; onManualStart: (match: Match) => void }> = ({ match, favoriteTeamIds, startingMatch, onStart, onManualStart }) => {
+const MatchRow: React.FC<{ match: Match; favoriteTeamIds: string[]; startingMatch: string | null; onStart: (matchId: string) => void; onManualStart: (match: Match) => void; onAIStart: (match: Match) => void }> = ({ match, favoriteTeamIds, startingMatch, onStart, onManualStart, onAIStart }) => {
   const homeFavorite = match.homeTeam && favoriteTeamIds.includes(match.homeTeam.id);
   const awayFavorite = match.awayTeam && favoriteTeamIds.includes(match.awayTeam.id);
-  return <div id={`match-${match.id}`} className="scroll-mt-6 border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} fallback={getMatchSideFallback(match, 'home')} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} fallback={getMatchSideFallback(match, 'away')} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">第 {match.round} 轮 - {match.bracketStage || getMatchStageName(match, {})} - {match.status === 'scheduled' ? '待进行' : match.status === 'in_progress' ? '进行中' : '已结束'}{match.resultMode === 'manual' && <span className="ml-2 text-blue-700">上帝摇骰子</span>}</p><p className="text-xs text-gray-500 mt-1">{formatMatchTime(match.scheduledAt)}{match.venue ? ` · ${match.venue}` : ''}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">点球 {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && match.homeTeam && match.awayTeam && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? '开始中...' : '自动进行'}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">掷骰子</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? '查看详情' : '查看统计'}</Link></div></div></div>;
+  return <div id={`match-${match.id}`} className="scroll-mt-6 border rounded-lg p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white"><div className="flex-1 min-w-0"><h4 className="font-semibold mb-1 flex flex-wrap items-center gap-2 min-w-0"><TeamNameWithFlag team={match.homeTeam} fallback={getMatchSideFallback(match, 'home')} className={`${homeFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /><span className="text-gray-400 flex-shrink-0">vs</span><TeamNameWithFlag team={match.awayTeam} fallback={getMatchSideFallback(match, 'away')} className={`${awayFavorite ? 'text-yellow-700' : 'text-gray-900'} max-w-full sm:max-w-[45%]`} flagClassName="w-5 h-4 flex-shrink-0" /></h4><p className="text-sm text-gray-600">第 {match.round} 轮 - {match.bracketStage || getMatchStageName(match, {})} - {match.status === 'scheduled' ? '待进行' : match.status === 'in_progress' ? '进行中' : '已结束'}{match.resultMode === 'manual' && <span className="ml-2 inline-flex rounded bg-green-300 px-2 py-0.5 text-xs font-bold text-black">上帝摇骰子</span>}{match.resultMode === 'ai' && <span className="ml-2 inline-flex rounded bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">AI</span>}</p><p className="text-xs text-gray-500 mt-1">{formatMatchTime(match.scheduledAt)}{match.venue ? ` · ${match.venue}` : ''}</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">{match.status !== 'scheduled' && <span className="font-bold text-xl sm:text-right">{match.homeScore ?? 0} - {match.awayScore ?? 0}{hasPenaltyResult(match) && <span className="ml-2 text-sm text-gray-600">点球 {match.homePenaltyScore} - {match.awayPenaltyScore}</span>}</span>}<div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{match.status === 'scheduled' && match.homeTeam && match.awayTeam && <><button onClick={() => onStart(match.id)} disabled={startingMatch === match.id} className="inline-flex flex-1 justify-center whitespace-nowrap bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 sm:flex-none">{startingMatch === match.id ? '开始中...' : '自动进行'}</button><button onClick={() => onManualStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700 sm:flex-none">掷骰子</button><button onClick={() => onAIStart(match)} className="inline-flex flex-1 justify-center whitespace-nowrap bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 sm:flex-none">AI对决</button></>}<Link to={`/matches/${match.id}`} className="inline-flex flex-1 justify-center whitespace-nowrap bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 sm:flex-none">{match.status === 'scheduled' ? '查看详情' : '查看统计'}</Link></div></div></div>;
+};
+
+const formationCoordinates: Record<string, Array<{ x: number; y: number }>> = {
+  '4-3-3': [{ x: 50, y: 90 }, { x: 18, y: 72 }, { x: 38, y: 74 }, { x: 62, y: 74 }, { x: 82, y: 72 }, { x: 50, y: 56 }, { x: 30, y: 48 }, { x: 70, y: 48 }, { x: 20, y: 24 }, { x: 50, y: 18 }, { x: 80, y: 24 }],
+  '4-2-3-1': [{ x: 50, y: 90 }, { x: 18, y: 72 }, { x: 38, y: 74 }, { x: 62, y: 74 }, { x: 82, y: 72 }, { x: 38, y: 56 }, { x: 62, y: 56 }, { x: 24, y: 36 }, { x: 50, y: 34 }, { x: 76, y: 36 }, { x: 50, y: 16 }],
+  '4-4-2': [{ x: 50, y: 90 }, { x: 18, y: 72 }, { x: 38, y: 74 }, { x: 62, y: 74 }, { x: 82, y: 72 }, { x: 20, y: 46 }, { x: 40, y: 48 }, { x: 60, y: 48 }, { x: 80, y: 46 }, { x: 40, y: 20 }, { x: 60, y: 20 }],
+  '5-4-1': [{ x: 50, y: 90 }, { x: 12, y: 70 }, { x: 30, y: 75 }, { x: 50, y: 77 }, { x: 70, y: 75 }, { x: 88, y: 70 }, { x: 20, y: 46 }, { x: 40, y: 48 }, { x: 60, y: 48 }, { x: 80, y: 46 }, { x: 50, y: 18 }]
+};
+
+const FullFormationPitch: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string; awayName?: string }> = ({ homePlan, awayPlan, homeName, awayName }) => {
+  const renderPlayers = (plan: any, side: 'home' | 'away') => {
+    const lineup = plan?.lineup || [];
+    const coords = formationCoordinates[plan?.formation] || formationCoordinates['4-4-2'];
+    return lineup.map((player: any, index: number) => {
+      const point = coords[index] || { x: 50, y: 50 };
+      const left = side === 'home' ? 3 + (100 - point.y) * 0.44 : 97 - (100 - point.y) * 0.44;
+      const top = point.x;
+      return (
+        <div key={`${side}-${player.number}-${index}`} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: `${left}%`, top: `${top}%` }}>
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow ${side === 'home' ? 'bg-blue-700' : 'bg-red-700'}`}>{player.number}</div>
+          <div className="mt-1 max-w-[70px] truncate rounded bg-black/50 px-1 text-[10px] text-white">{player.position}</div>
+        </div>
+      );
+    });
+  };
+
+  return (
+    <div className="rounded border bg-gray-50 p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-blue-800">{homeName || '主队'} · {homePlan?.formation || '待入场'}</div>
+        <div className="text-sm font-semibold text-red-800">{awayPlan?.formation || '待入场'} · {awayName || '客队'}</div>
+      </div>
+      <div className="relative aspect-[16/9] overflow-hidden rounded bg-emerald-700 shadow-inner">
+        <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,.18) 0 1px, transparent 1px 12%)' }} />
+        <div className="absolute inset-3 rounded border-2 border-white/75" />
+        <div className="absolute left-1/2 top-3 bottom-3 w-0 border-l-2 border-white/65" />
+        <div className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/65" />
+        <div className="absolute left-3 top-1/2 h-36 w-20 -translate-y-1/2 border-2 border-l-0 border-white/65" />
+        <div className="absolute right-3 top-1/2 h-36 w-20 -translate-y-1/2 border-2 border-r-0 border-white/65" />
+        <div className="absolute left-3 top-1/2 h-20 w-9 -translate-y-1/2 border-2 border-l-0 border-white/55" />
+        <div className="absolute right-3 top-1/2 h-20 w-9 -translate-y-1/2 border-2 border-r-0 border-white/55" />
+        <div className="absolute left-[10%] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-white/70" />
+        <div className="absolute right-[10%] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-white/70" />
+        {homePlan ? renderPlayers(homePlan, 'home') : <div className="absolute left-1/4 top-1/2 -translate-x-1/2 rounded bg-black/40 px-3 py-2 text-sm text-white">主队正在通道候场</div>}
+        {awayPlan ? renderPlayers(awayPlan, 'away') : <div className="absolute right-1/4 top-1/2 translate-x-1/2 rounded bg-black/40 px-3 py-2 text-sm text-white">客队正在通道候场</div>}
+      </div>
+    </div>
+  );
+};
+
+const TacticsPanel: React.FC<{ plan?: any }> = ({ plan }) => (
+  <div className="mt-3 rounded border bg-white p-3">
+    <div className="text-sm font-semibold text-gray-900">战术设置板</div>
+    <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-700">
+      <div>心态：{plan?.tactics?.mentality || '教练组待定'}</div>
+      <div>压迫：{plan?.tactics?.pressing || '-'}</div>
+      <div>防线：{plan?.tactics?.defensiveLine || '-'}</div>
+      <div>传球：{plan?.tactics?.passingStyle || '-'}</div>
+      <div>宽度：{plan?.tactics?.attackingWidth || '-'}</div>
+      <div className="text-gray-400">赛前战术待确认</div>
+    </div>
+  </div>
+);
+
+const PlanPanel: React.FC<{ title: string; plan?: any }> = ({ title, plan }) => (
+  <div className="rounded border bg-gray-50 p-3">
+    <div className="flex items-center justify-between gap-2">
+      <h4 className="font-semibold text-gray-900">{title}</h4>
+      <span className="rounded bg-white px-2 py-1 text-sm text-gray-700">{plan?.formation || '待入场'}</span>
+    </div>
+    {plan ? <TacticsPanel plan={plan} /> : <p className="mt-3 text-sm text-gray-500">教练组正在提交赛前战术板。</p>}
+  </div>
+);
+
+const LineupPanel: React.FC<{ homePlan?: any; awayPlan?: any; homeName?: string; awayName?: string }> = ({ homePlan, awayPlan, homeName, awayName }) => {
+  const renderLineup = (plan: any, side: 'home' | 'away') => {
+    const lineup = plan?.lineup || [];
+    if (lineup.length === 0) {
+      return <div className="rounded bg-gray-50 p-3 text-sm text-gray-500">待入场名单生成中</div>;
+    }
+
+    return (
+      <div className="space-y-1.5">
+        {lineup.map((player: any, index: number) => (
+          <div key={`${side}-lineup-${player.number || index}-${player.name || index}`} className="flex items-center gap-2 rounded bg-white px-2 py-1.5 text-sm shadow-sm">
+            <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${side === 'home' ? 'bg-blue-700' : 'bg-red-700'}`}>{player.number || index + 1}</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-gray-900">{player.name || `球员 ${index + 1}`}</span>
+            <span className="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{player.position || '-'}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded border bg-gray-50 p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-gray-900">球员名单</h3>
+        <span className="rounded bg-white px-2 py-1 text-xs text-gray-600">首发 11 人</span>
+      </div>
+      <div className="space-y-4">
+        <section>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="truncate text-sm font-semibold text-blue-800">{homeName || '主队'}</div>
+            <div className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-800">{homePlan?.formation || '待入场'}</div>
+          </div>
+          {renderLineup(homePlan, 'home')}
+        </section>
+        <section>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="truncate text-sm font-semibold text-red-800">{awayName || '客队'}</div>
+            <div className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-800">{awayPlan?.formation || '待入场'}</div>
+          </div>
+          {renderLineup(awayPlan, 'away')}
+        </section>
+      </div>
+    </div>
+  );
+};
+
+const AIMatchModal: React.FC<{
+  match: Match;
+  session: AIMatchSession | null;
+  duration: number;
+  running: boolean;
+  saving: boolean;
+  finishing: boolean;
+  voiceEnabled: boolean;
+  halftimePaused: boolean;
+  interactiveEvent: AIInteractiveEvent | null;
+  penaltyKicks: PenaltyKick[];
+  penaltyDiceOpen: boolean;
+  isAdmin: boolean;
+  onDurationChange: (value: number) => void;
+  onVoiceChange: (value: boolean) => void;
+  onContinueSecondHalf: () => void;
+  onInteractiveDiceClose: () => void;
+  onInteractiveDiceComplete: (shooter: number, keeper: number) => void;
+  onStart: () => void;
+  onFinish: () => void;
+  onSave: () => void;
+  onPenaltyRoll: () => void;
+  onPenaltyManualRoll: () => void;
+  onPenaltyDiceClose: () => void;
+  onPenaltyDiceComplete: (shooter: number, keeper: number) => void;
+  onClose: () => void;
+}> = ({ match, session, duration, running, saving, finishing, voiceEnabled, halftimePaused, interactiveEvent, penaltyKicks, penaltyDiceOpen, isAdmin, onDurationChange, onVoiceChange, onContinueSecondHalf, onInteractiveDiceClose, onInteractiveDiceComplete, onStart, onFinish, onSave, onPenaltyRoll, onPenaltyManualRoll, onPenaltyDiceClose, onPenaltyDiceComplete, onClose }) => {
+  const durations = [0.5, 1, 2, 4, 6, 8, 16, 20, 45, 90];
+  const formatDurationOption = (value: number) => value < 1 ? '30秒' : `${value}分钟`;
+  const finished = session?.status === 'finished';
+  const needsPenalty = Boolean(finished && !match.groupName && session?.homeScore === session?.awayScore);
+  const penaltyComplete = getPenaltyComplete(penaltyKicks);
+  const keyEvents = (session?.events || []).filter(event => event.key || ['goal', 'penalty', 'card', 'injury', 'chance', 'save'].includes(event.type));
+  const commentaryEvents = [...(session?.events || [])].reverse();
+  const latestCommentary = formatAIEventText(commentaryEvents[0]?.text);
+  const displayKeyEvents = [...keyEvents].reverse();
+  const [displayMinute, setDisplayMinute] = useState(0);
+  const [crowdEnabled, setCrowdEnabled] = useState(false);
+  const [startOptionsOpen, setStartOptionsOpen] = useState(false);
+  const [goalFlash, setGoalFlash] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const clockStartedAt = useRef<number>();
+  const previousScoreRef = useRef('0-0');
+  const crowdAudioRef = useRef<{ context: AudioContext; source: AudioBufferSourceNode; gain: GainNode }>();
+
+  useEffect(() => {
+    if (!session) {
+      clockStartedAt.current = undefined;
+      setDisplayMinute(0);
+      return;
+    }
+
+    if (finished) {
+      setDisplayMinute(AI_MATCH_TOTAL_MINUTES);
+      return;
+    }
+
+    if (!running) {
+      clockStartedAt.current = undefined;
+      setDisplayMinute(Math.max(displayMinute, session.currentMinute));
+      return;
+    }
+
+    if (!clockStartedAt.current) {
+      const progress = Math.max(0, Math.min(session.currentMinute, AI_MATCH_TOTAL_MINUTES)) / AI_MATCH_TOTAL_MINUTES;
+      clockStartedAt.current = Date.now() - progress * duration * 60 * 1000;
+    }
+
+    const timer = window.setInterval(() => {
+      const elapsed = Date.now() - (clockStartedAt.current || Date.now());
+      const nextMinute = Math.min(AI_MATCH_TOTAL_MINUTES, (elapsed / (duration * 60 * 1000)) * AI_MATCH_TOTAL_MINUTES);
+      setDisplayMinute(Math.max(nextMinute, session.currentMinute));
+    }, 250);
+
+    return () => window.clearInterval(timer);
+  }, [duration, finished, running, session]);
+
+  useEffect(() => {
+    const currentScore = `${session?.homeScore ?? 0}-${session?.awayScore ?? 0}`;
+    if (!session) {
+      previousScoreRef.current = currentScore;
+      setGoalFlash(false);
+      return;
+    }
+    if (previousScoreRef.current !== currentScore) {
+      previousScoreRef.current = currentScore;
+      setGoalFlash(true);
+      const timer = window.setTimeout(() => setGoalFlash(false), 3600);
+      return () => window.clearTimeout(timer);
+    }
+  }, [session?.homeScore, session?.awayScore, session?.id]);
+
+  useEffect(() => {
+    if (!crowdEnabled || (!running && !halftimePaused)) {
+      if (crowdAudioRef.current) {
+        crowdAudioRef.current.source.stop();
+        crowdAudioRef.current.context.close();
+        crowdAudioRef.current = undefined;
+      }
+      return;
+    }
+    if (crowdAudioRef.current) return;
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    void context.resume();
+    const buffer = context.createBuffer(1, context.sampleRate * 3, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) data[index] = (Math.random() * 2 - 1) * 0.28;
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const swell = context.createOscillator();
+    const swellGain = context.createGain();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    source.loop = true;
+    filter.type = 'lowpass';
+    filter.frequency.value = 1200;
+    swell.type = 'sine';
+    swell.frequency.value = 96;
+    swellGain.gain.value = 0.018;
+    gain.gain.value = 0.075;
+    source.connect(filter);
+    filter.connect(gain);
+    swell.connect(swellGain);
+    swellGain.connect(gain);
+    gain.connect(context.destination);
+    source.start();
+    swell.start();
+    crowdAudioRef.current = { context, source, gain };
+    return () => {
+      if (crowdAudioRef.current) {
+        crowdAudioRef.current.source.stop();
+        crowdAudioRef.current.context.close();
+        crowdAudioRef.current = undefined;
+      }
+    };
+  }, [crowdEnabled, halftimePaused, running]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">AI 对决</h2>
+            <p className="mt-1 text-sm text-gray-600">{match.homeTeam?.name} vs {match.awayTeam?.name}</p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button onClick={() => setStartOptionsOpen(true)} disabled={running || !!session} className="rounded bg-purple-600 px-3 py-2 text-sm text-white hover:bg-purple-700 disabled:opacity-50">{running ? 'AI 对决中...' : '开始 AI 对决'}</button>
+            {halftimePaused && <button onClick={onContinueSecondHalf} className="rounded bg-amber-700 px-3 py-2 text-sm text-white hover:bg-amber-800">下半场开始</button>}
+            <button onClick={onFinish} disabled={finishing || session?.status === 'finished'} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-gray-900 disabled:opacity-50">{finishing ? '结算中...' : '快速完成'}</button>
+            <button onClick={onSave} disabled={!finished || saving || (needsPenalty && !penaltyComplete)} className="rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700 disabled:opacity-50">{saving ? '保存中...' : needsPenalty && !penaltyComplete ? '先点球' : '保存结果'}</button>
+            {isAdmin && <button onClick={() => setDebugOpen(open => !open)} className="rounded bg-rose-600 px-3 py-2 text-sm text-white hover:bg-rose-700">DEBUG</button>}
+            <button onClick={onClose} disabled={running} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 disabled:opacity-50">关闭</button>
+          </div>
+        </div>
+
+        <div className={`mt-4 rounded-lg border px-4 py-3 text-gray-900 shadow-sm transition-all ${goalFlash ? 'goal-scoreboard-blast' : 'border-emerald-200 bg-emerald-50'}`}>
+          <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-3">
+            <div className="flex min-w-0 items-center justify-end gap-2 text-right text-sm font-semibold sm:text-base">
+              <TeamFlag team={match.homeTeam} className="h-4 w-6 flex-shrink-0" />
+              <span className="truncate">{match.homeTeam?.name || '主队'}</span>
+            </div>
+            <div className="rounded border border-emerald-200 bg-white px-4 py-2 text-2xl font-bold tabular-nums text-gray-950 shadow-sm">{session?.homeScore ?? 0} - {session?.awayScore ?? 0}</div>
+            <div className="flex min-w-0 items-center gap-2 text-sm font-semibold sm:text-base">
+              <span className="truncate">{match.awayTeam?.name || '客队'}</span>
+              <TeamFlag team={match.awayTeam} className="h-4 w-6 flex-shrink-0" />
+            </div>
+            <div className="rounded bg-emerald-700 px-3 py-2 text-xl font-bold tabular-nums text-white">{formatAIMatchClock(displayMinute)}</div>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded bg-emerald-100">
+            <div className="h-full rounded bg-emerald-600 transition-all" style={{ width: `${Math.min(100, (displayMinute / AI_MATCH_TOTAL_MINUTES) * 100)}%` }} />
+          </div>
+        </div>
+        <div className="mt-2 rounded-lg border border-emerald-100 bg-white px-4 py-3 text-sm text-gray-800 shadow-sm">
+          {halftimePaused ? '球员回到更衣室，解说席稍作调整。' : latestCommentary || '解说席正在连线，等待开球哨响。'}
+        </div>
+        {isAdmin && debugOpen && (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-semibold">赛前 DEBUG</h3>
+              <span className="rounded bg-white px-2 py-1 text-xs">仅 admin 可见</span>
+            </div>
+            {session?.engineState ? (
+              <>
+                <div className="mt-3 grid gap-2 md:grid-cols-4">
+                  <div className="rounded bg-white p-2">预设进球预算：{session.engineState.goalBudget ?? '-'}</div>
+                  <div className="rounded bg-white p-2">已发生进球：{session.engineState.usedGoalBudget ?? 0}</div>
+                  <div className="rounded bg-white p-2">大机会预算：{session.engineState.bigChanceBudget ?? '-'}</div>
+                  <div className="rounded bg-white p-2">已发生大机会：{session.engineState.usedBigChanceBudget ?? 0}</div>
+                </div>
+                <div className="mt-3 max-h-44 overflow-y-auto rounded bg-white p-2">
+                  {(session.engineState.pendingEvents || []).length === 0 && <div className="text-rose-700">暂无未来事件。</div>}
+                  {(session.engineState.pendingEvents || []).map((event: any) => (
+                    <div key={event.id} className={`border-b py-1 last:border-b-0 ${event.consumed ? 'text-gray-400 line-through' : ''}`}>
+                      {event.minute}' · {event.team === 'home' ? match.homeTeam?.name : match.awayTeam?.name} · {event.type} · 发生率 {Math.round((event.probability || 0) * 100)}% · {event.reason}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="mt-3 rounded bg-white p-3 text-rose-700">开始 AI 对决后会生成赛前比分预算和未来事件。</div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[260px_1fr]">
+          <div className="space-y-4">
+            <LineupPanel homePlan={session?.homePlan} awayPlan={session?.awayPlan} homeName={match.homeTeam?.name} awayName={match.awayTeam?.name} />
+          </div>
+
+          <div className="space-y-4">
+            <FullFormationPitch homePlan={session?.homePlan} awayPlan={session?.awayPlan} homeName={match.homeTeam?.name} awayName={match.awayTeam?.name} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <PlanPanel title={`${match.homeTeam?.name || '主队'} 战术`} plan={session?.homePlan} />
+              <PlanPanel title={`${match.awayTeam?.name || '客队'} 战术`} plan={session?.awayPlan} />
+            </div>
+            <div className="rounded border p-4">
+              <h3 className="font-semibold text-gray-900">广播解说</h3>
+              <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+                {(session?.events || []).length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">解说席正在连线，等待开球哨响。</div>}
+                {commentaryEvents.map((event, index) => (
+                  <div key={`${event.minute}-${index}`} className={`rounded p-3 text-sm ${event.type === 'goal' ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-gray-700'}`}>
+                    <span className="font-semibold">{event.minute}'</span> {formatAIEventText(event.text)}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded border p-4">
+              <h3 className="font-semibold text-gray-900">文字直播</h3>
+              <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
+                {keyEvents.length === 0 && <div className="rounded bg-gray-50 p-4 text-sm text-gray-500">比赛关键时刻会在这里亮起。</div>}
+                {displayKeyEvents.map((event, index) => (
+                  <div key={`key-${event.minute}-${index}`} className="rounded bg-amber-50 p-3 text-sm text-amber-900">
+                    <span className="font-semibold">{event.minute}'</span> {formatAIEventText(event.text)}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {interactiveEvent && (
+              <div className="rounded border border-purple-200 bg-purple-50 p-4">
+                <h3 className="font-semibold text-purple-900">关键射门判定</h3>
+                <p className="mt-1 text-sm text-purple-800">{interactiveEvent.minute}' {interactiveEvent.text}</p>
+                <p className="mt-1 text-xs text-purple-700">上帝摇骰子后，结果会反馈给 AI 解说继续比赛。</p>
+              </div>
+            )}
+            {needsPenalty && <PenaltyShootoutPanel match={match} kicks={penaltyKicks} complete={penaltyComplete} submitting={saving} saved={false} onRoll={onPenaltyRoll} onManualRoll={onPenaltyManualRoll} />}
+            {penaltyDiceOpen && <PenaltyDiceModal title="AI 对决点球大战，上帝摇骰子决定射门和扑救。" onClose={onPenaltyDiceClose} onComplete={onPenaltyDiceComplete} />}
+            {interactiveEvent && <PenaltyDiceModal title="关键射门，上帝摇骰子决定射门与扑救。" onClose={onInteractiveDiceClose} onComplete={onInteractiveDiceComplete} />}
+            {session?.statistics && (
+              <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+                <InfoCard icon={null} label="主队射门" value={String(session.statistics.homeShots || 0)} />
+                <InfoCard icon={null} label="客队射门" value={String(session.statistics.awayShots || 0)} />
+                <InfoCard icon={null} label="主队角球" value={String(session.statistics.homeCorners || 0)} />
+                <InfoCard icon={null} label="客队角球" value={String(session.statistics.awayCorners || 0)} />
+              </div>
+            )}
+            <div className="rounded border bg-gray-50 p-4">
+              <h3 className="font-semibold text-gray-900">转播设置</h3>
+              <div className="mt-3 grid gap-3 text-sm text-gray-700 md:grid-cols-3">
+                <div className="rounded bg-white p-3">压缩播放：{formatDurationOption(duration)}</div>
+                <label className="flex items-center gap-2 rounded bg-white p-3">
+                  <input type="checkbox" checked={voiceEnabled} onChange={event => onVoiceChange(event.target.checked)} />
+                  广播语音播报
+                </label>
+                <label className="flex items-center gap-2 rounded bg-white p-3">
+                  <input type="checkbox" checked={crowdEnabled} onChange={event => setCrowdEnabled(event.target.checked)} />
+                  观众背景音
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+        {startOptionsOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+              <h3 className="text-lg font-bold text-gray-900">赛前转播设置</h3>
+              <p className="mt-1 text-sm text-gray-600">实际比赛为 90 分钟，选择压缩播放用时。</p>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {durations.map(item => <button key={item} onClick={() => onDurationChange(item)} className={`rounded px-3 py-2 text-sm ${duration === item ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{formatDurationOption(item)}</button>)}
+              </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <button onClick={() => setStartOptionsOpen(false)} className="rounded bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">取消</button>
+                <button onClick={() => { setStartOptionsOpen(false); onStart(); }} className="rounded bg-purple-600 px-4 py-2 text-white hover:bg-purple-700">开球</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 const PenaltyShootoutPanel: React.FC<{ match: Match; kicks: PenaltyKick[]; complete: boolean; submitting: boolean; saved: boolean; onRoll: () => void; onManualRoll: () => void }> = ({ match, kicks, complete, submitting, saved, onRoll, onManualRoll }) => {
@@ -989,7 +1641,7 @@ const PenaltyDiceModal: React.FC<{ title: string; onClose: () => void; onComplet
       <div className="w-full max-w-3xl rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-xl font-bold text-gray-900">上帝正在掷点球骰子</h3>
+            <h3 className="text-xl font-bold text-gray-900">{title.includes('点球') ? '上帝正在掷点球骰子' : '上帝正在掷射门骰子'}</h3>
             <p className="text-sm text-gray-600">{title}</p>
           </div>
           <button type="button" onClick={onClose} disabled={rolling} className="text-gray-500 hover:text-gray-800 disabled:opacity-50">关闭</button>

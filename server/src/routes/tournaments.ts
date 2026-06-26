@@ -13,5 +13,6 @@ router.post('/', TournamentController.createTournament);
 router.put('/:id', TournamentController.updateTournament);
 router.delete('/:id', TournamentController.deleteTournament);
 router.post('/:id/start', TournamentController.startTournament);
+router.post('/:id/sync-real-results', TournamentController.syncRealTournamentResults);
 
 export default router;

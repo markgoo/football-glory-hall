@@ -31,10 +31,12 @@ import tournamentRoutes from './routes/tournaments';
 import matchRoutes from './routes/matches';
 import historicalRoutes from './routes/historical';
 import assetRoutes from './routes/assets';
+import llmRoutes from './routes/llm';
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/historical', historicalRoutes);
 app.use('/api/assets', assetRoutes);
+app.use('/api/llm', llmRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

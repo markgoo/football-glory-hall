@@ -4,3 +4,6 @@ export { Tournament } from './Tournament';
 export { Match } from './Match';
 export { MatchStatistics } from './MatchStatistics';
 export { HistoricalRecord } from './HistoricalRecord';
+export { LLMSetting } from './LLMSetting';
+export { LLMPromptTemplate } from './LLMPromptTemplate';
+export { AIMatchSession } from './AIMatchSession';

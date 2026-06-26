@@ -17,6 +17,10 @@ export interface Team {
   logo?: string | null;
   country?: string;
   founded?: number;
+  externalApiId?: number;
+  playerSource?: 'api-football' | 'generated';
+  playersSyncedAt?: string;
+  players?: TeamPlayer[];
   groupName?: string;
   stats: TeamStats;
   points: number;
@@ -25,6 +29,16 @@ export interface Team {
   losses: number;
   goalsFor: number;
   goalsAgainst: number;
+}
+
+export interface TeamPlayer {
+  id?: number | string;
+  name: string;
+  age?: number;
+  number?: number;
+  position?: string;
+  photo?: string;
+  rating?: number;
 }
 
 export interface TeamCandidate {
@@ -83,7 +97,7 @@ export interface Match {
   awayScore?: number;
   homePenaltyScore?: number;
   awayPenaltyScore?: number;
-  resultMode?: 'auto' | 'manual';
+  resultMode?: 'auto' | 'manual' | 'ai';
   manualDetails?: any;
   commentary?: string;
   events?: MatchEvent[];

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { unCountryNames } from '../data/unCountries';
 import { getCountryNameZh } from '../data/countryNamesZh';
 
-interface Player {
+export interface FootballApiPlayer {
   id: number;
   name: string;
   age: number;
@@ -26,7 +26,7 @@ interface TeamSquadResponse {
     name: string;
     logo: string;
   };
-  players: Player[];
+  players: FootballApiPlayer[];
 }
 
 class FootballAPIService {
@@ -113,6 +113,79 @@ class FootballAPIService {
     }
   }
 
+  async getFixturesByLeagueSeason(leagueId: number, season: number) {
+    try {
+      const response = await this.initializeClient().get('/fixtures', {
+        params: { league: leagueId, season }
+      });
+      return response.data.response || [];
+    } catch (error: any) {
+      console.error('Failed to fetch fixtures:', error.message);
+      return [];
+    }
+  }
+
+  async searchTeams(query: string) {
+    const search = String(query || '').trim();
+    if (!search) return [];
+
+    try {
+      const response = await this.initializeClient().get('/teams', {
+        params: { search }
+      });
+      return response.data.response || [];
+    } catch (error: any) {
+      console.error('Failed to search teams:', error.message);
+      return [];
+    }
+  }
+
+  private normalizeComparableName(value: string) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  async resolveTeamApiId(params: { name: string; country?: string; preferredId?: number; national?: boolean }) {
+    const looksLikeLocalFallbackId = params.preferredId && ((params.preferredId >= 1000 && params.preferredId < 2000) || params.preferredId >= 9000);
+    if (params.preferredId && params.preferredId > 0 && !looksLikeLocalFallbackId) {
+      return params.preferredId;
+    }
+
+    const country = String(params.country || params.name || '').trim();
+    const searchTerms = Array.from(new Set([country, params.name].filter(Boolean)));
+    const normalizedCountry = this.normalizeComparableName(country);
+    const normalizedName = this.normalizeComparableName(params.name);
+
+    for (const term of searchTerms) {
+      const teams = await this.searchTeams(term);
+      const candidates = teams
+        .map((item: any) => item.team)
+        .filter(Boolean)
+        .filter((team: any) => {
+          if (params.national && team.national !== true) return false;
+          const teamCountry = this.normalizeComparableName(team.country || '');
+          const teamName = this.normalizeComparableName(team.name || '');
+          return teamCountry === normalizedCountry || teamName === normalizedName || teamName.includes(normalizedCountry);
+        });
+
+      if (candidates.length > 0) {
+        return Number(candidates[0].id);
+      }
+    }
+
+    return undefined;
+  }
+
+  async getResolvedTeamSquad(params: { name: string; country?: string; preferredId?: number; national?: boolean }) {
+    const apiId = await this.resolveTeamApiId(params);
+    if (!apiId) return { apiId: undefined, squad: null };
+    const squad = await this.getTeamSquad(apiId);
+    return { apiId, squad };
+  }
+
   // 转换API数据为内部格式
   transformApiTeamToInternal(apiTeam: any) {
     return {
@@ -134,7 +207,7 @@ class FootballAPIService {
   }
 
   // 计算球队整体实力（注：当前版本不使用此方法，保留备用）
-  calculateTeamStrength(players: Player[]) {
+  calculateTeamStrength(players: FootballApiPlayer[]) {
     const baseStats = {
       attack: 0,
       defense: 0,

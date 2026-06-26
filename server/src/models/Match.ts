@@ -5,7 +5,7 @@ import { MatchStatistics } from './MatchStatistics';
 
 export type MatchStatus = 'scheduled' | 'in_progress' | 'completed';
 export type MatchStage = 'third_place';
-export type MatchResultMode = 'auto' | 'manual';
+export type MatchResultMode = 'auto' | 'manual' | 'ai';
 
 @Entity('matches')
 export class Match {

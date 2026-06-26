@@ -1,7 +1,7 @@
 ﻿import { Request, Response } from 'express';
 import { AppDataSource } from '../config/database';
 import { Tournament } from '../models/Tournament';
-import { Team } from '../models/Team';
+import { Team, TeamPlayer } from '../models/Team';
 import { Match } from '../models/Match';
 import { MatchStatistics } from '../models/MatchStatistics';
 import { HistoricalRecord } from '../models/HistoricalRecord';
@@ -42,6 +42,32 @@ const getTeamIdentityKey = (team: any) => {
   return teamName ? `${teamName}:${country}` : String(team?.id || '').toLowerCase();
 };
 
+const normalizeApiPlayerPosition = (position?: string) => {
+  const value = String(position || '').toLowerCase();
+  if (value.includes('goalkeeper')) return '门将';
+  if (value.includes('defender')) return '后卫';
+  if (value.includes('midfielder')) return '中场';
+  if (value.includes('attacker')) return '前锋';
+  return position || '球员';
+};
+
+const transformApiPlayers = (players: any[]): TeamPlayer[] => (players || []).map((player, index) => ({
+  id: player.id,
+  name: player.name || `球员 ${index + 1}`,
+  age: player.age,
+  number: player.number || index + 1,
+  position: normalizeApiPlayerPosition(player.position),
+  photo: player.photo
+}));
+
+const normalizeSyncName = (value?: string) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]/g, '');
+
+const completedFixtureStatus = new Set(['FT', 'AET', 'PEN']);
+
 const FIFA_WORLD_CUP_2026_BRACKET_SLOTS: Record<string, { homeSlot: string; awaySlot: string }> = {
   'R32-1': { homeSlot: '2A', awaySlot: '2B' },
   'R32-2': { homeSlot: '1E', awaySlot: '3A/B/C/D/F' },
@@ -70,6 +96,35 @@ const FIFA_WORLD_CUP_2026_BRACKET_SLOTS: Record<string, { homeSlot: string; away
 };
 
 export class TournamentController {
+  private static async hydrateTeamPlayers(team: Team, options: { apiTeam?: any; teamCategory: 'club' | 'national' }) {
+    const preferredId = Number(options.apiTeam?.team?.id || team.externalApiId || 0) || undefined;
+
+    try {
+      const { apiId, squad } = await FootballAPIService.getResolvedTeamSquad({
+        name: team.name,
+        country: team.country,
+        preferredId,
+        national: options.teamCategory === 'national'
+      });
+
+      if (apiId) {
+        team.externalApiId = apiId;
+      }
+
+      if (squad?.players?.length) {
+        team.players = transformApiPlayers(squad.players);
+        team.playerSource = 'api-football';
+        team.playersSyncedAt = new Date();
+      } else {
+        team.players = options.apiTeam?.players?.length ? transformApiPlayers(options.apiTeam.players) : undefined;
+        team.playerSource = team.players?.length ? 'api-football' : 'generated';
+      }
+    } catch (error: any) {
+      console.warn(`Failed to hydrate players for ${team.name}:`, error.message);
+      team.playerSource = 'generated';
+    }
+  }
+
   private static normalizeRealTemplateId(value: unknown): RealTournamentTemplateId | undefined {
     return value === 'fifa_world_cup_2026' ? value : undefined;
   }
@@ -251,6 +306,10 @@ export class TournamentController {
           logo: team.logo,
           country: team.country,
           founded: team.founded,
+          externalApiId: team.externalApiId,
+          playerSource: team.playerSource,
+          playersSyncedAt: team.playersSyncedAt,
+          players: team.players,
           groupName: team.groupName,
           stats: team.stats,
           points: team.points,
@@ -288,6 +347,10 @@ export class TournamentController {
               shortName: match.homeTeam.shortName,
               logo: match.homeTeam.logo,
               country: match.homeTeam.country,
+              externalApiId: match.homeTeam.externalApiId,
+              playerSource: match.homeTeam.playerSource,
+              playersSyncedAt: match.homeTeam.playersSyncedAt,
+              players: match.homeTeam.players,
               groupName: match.homeTeam.groupName,
               stats: match.homeTeam.stats
             } : null,
@@ -297,6 +360,10 @@ export class TournamentController {
               shortName: match.awayTeam.shortName,
               logo: match.awayTeam.logo,
               country: match.awayTeam.country,
+              externalApiId: match.awayTeam.externalApiId,
+              playerSource: match.awayTeam.playerSource,
+              playersSyncedAt: match.awayTeam.playersSyncedAt,
+              players: match.awayTeam.players,
               groupName: match.awayTeam.groupName,
               stats: match.awayTeam.stats
             } : null,
@@ -455,12 +522,16 @@ export class TournamentController {
           logo: logo || undefined,
           tournament: savedTournament
         });
+        if (apiTeam?.team?.id) {
+          team.externalApiId = Number(apiTeam.team.id);
+        }
         if (country) {
           team.country = country;
         }
         if (founded) {
           team.founded = founded;
         }
+        await TournamentController.hydrateTeamPlayers(team, { apiTeam, teamCategory: normalizedTeamCategory });
         teams.push(team);
       }
 
@@ -501,6 +572,10 @@ export class TournamentController {
           logo: team.logo,
           country: team.country,
           founded: team.founded,
+          externalApiId: team.externalApiId,
+          playerSource: team.playerSource,
+          playersSyncedAt: team.playersSyncedAt,
+          players: team.players,
           groupName: team.groupName,
           stats: team.stats
         })) || [],
@@ -711,10 +786,11 @@ export class TournamentController {
       user: { id: userId }
     }));
 
-    const teams = template.teams.map(templateTeam => {
+    const teams: Team[] = [];
+    for (const templateTeam of template.teams) {
       const finalName = replaceTeamName(templateTeam.name);
       const finalCountry = replaceCountryName(templateTeam.country);
-      return teamRepository.create({
+      const team = teamRepository.create({
         name: finalName,
         shortName: finalName === 'China' ? 'CHN' : templateTeam.code,
         country: finalCountry,
@@ -722,7 +798,9 @@ export class TournamentController {
         stats: TournamentController.createStatsFromStrength(finalName === 'China' ? 72 : templateTeam.strength),
         tournament
       });
-    });
+      await TournamentController.hydrateTeamPlayers(team, { teamCategory: 'national' });
+      teams.push(team);
+    }
     const savedTeams = await teamRepository.save(teams);
     const teamByName = new Map(savedTeams.map(team => [team.name, team]));
 
@@ -774,6 +852,71 @@ export class TournamentController {
       teams: savedTeams,
       matches: savedMatches
     });
+  }
+
+  static async syncRealTournamentResults(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user.id;
+      const tournamentRepository = AppDataSource.getRepository(Tournament);
+      const matchRepository = AppDataSource.getRepository(Match);
+      const tournament = await tournamentRepository.findOne({
+        where: { id: req.params.id },
+        relations: ['user', 'matches', 'matches.homeTeam', 'matches.awayTeam']
+      });
+
+      if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+      if (tournament.user.id !== userId) return res.status(403).json({ error: 'Access denied' });
+      if (!tournament.realTournamentTemplate) return res.status(400).json({ error: 'Only real tournament templates can sync real results' });
+      if ((tournament.matches || []).some(match => match.status !== 'scheduled')) {
+        return res.status(400).json({ error: '已有比赛开始或结束，不能再同步真实比分' });
+      }
+
+      const fixtures = tournament.realTournamentTemplate === 'fifa_world_cup_2026'
+        ? await FootballAPIService.getFixturesByLeagueSeason(1, 2026)
+        : [];
+      const completedFixtures = fixtures.filter((item: any) => completedFixtureStatus.has(String(item.fixture?.status?.short || '')));
+      let updatedCount = 0;
+
+      for (const match of tournament.matches || []) {
+        if (!match.homeTeam || !match.awayTeam) continue;
+        const localHome = normalizeSyncName(match.homeTeam.country || match.homeTeam.name);
+        const localAway = normalizeSyncName(match.awayTeam.country || match.awayTeam.name);
+        const fixture = completedFixtures.find((item: any) => {
+          const fixtureHome = normalizeSyncName(item.teams?.home?.name);
+          const fixtureAway = normalizeSyncName(item.teams?.away?.name);
+          return fixtureHome === localHome && fixtureAway === localAway;
+        });
+        if (!fixture) continue;
+
+        match.homeScore = Number(fixture.goals?.home ?? 0);
+        match.awayScore = Number(fixture.goals?.away ?? 0);
+        match.status = 'completed';
+        match.resultMode = 'auto';
+        match.commentary = '已同步真实比赛结果';
+        match.events = [{
+          minute: 90,
+          type: 'goal',
+          team: 'neutral',
+          player: '',
+          description: `真实比分：${match.homeTeam.name} ${match.homeScore} - ${match.awayScore} ${match.awayTeam.name}`
+        }] as any;
+        if (fixture.score?.penalty?.home !== null && fixture.score?.penalty?.away !== null) {
+          match.homePenaltyScore = Number(fixture.score.penalty.home);
+          match.awayPenaltyScore = Number(fixture.score.penalty.away);
+        }
+        updatedCount += 1;
+      }
+
+      if (updatedCount > 0) await matchRepository.save(tournament.matches || []);
+      const refreshed = await tournamentRepository.findOne({
+        where: { id: tournament.id },
+        relations: ['teams', 'matches', 'matches.homeTeam', 'matches.awayTeam', 'matches.statistics']
+      });
+      res.json({ updatedCount, tournament: refreshed });
+    } catch (error) {
+      console.error('Sync real tournament results error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 
   private static isPowerOfTwo(value: number): boolean {
