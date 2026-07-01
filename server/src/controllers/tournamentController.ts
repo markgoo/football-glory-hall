@@ -112,7 +112,7 @@ const parseRealScorerEvents = (value: any, teamSide: 'home' | 'away', teamName: 
 const buildFallbackRealLineup = (team: Team) => ({
   teamName: team.name,
   source: team.playerSource || 'generated',
-  players: team.playerSource === 'api-football' ? (team.players || []).slice(0, 11).map((player, index) => ({
+  players: ['api-football', 'sportsdb'].includes(team.playerSource || '') ? (team.players || []).slice(0, 11).map((player, index) => ({
     number: player.number || index + 1,
     name: player.name,
     nameEn: player.name,
@@ -152,7 +152,7 @@ export class TournamentController {
     const preferredId = Number(options.apiTeam?.team?.id || team.externalApiId || 0) || undefined;
 
     try {
-      const { apiId, squad } = await FootballAPIService.getResolvedTeamSquad({
+      const { apiId, squad, source } = await FootballAPIService.getResolvedTeamSquad({
         name: team.name,
         country: team.country,
         preferredId,
@@ -165,11 +165,13 @@ export class TournamentController {
 
       if (squad?.players?.length) {
         team.players = transformApiPlayers(squad.players);
-        team.playerSource = 'api-football';
+        team.playerSource = source === 'sportsdb' ? 'sportsdb' : 'api-football';
         team.playersSyncedAt = new Date();
       } else {
         team.players = options.apiTeam?.players?.length ? transformApiPlayers(options.apiTeam.players) : undefined;
-        team.playerSource = team.players?.length ? 'api-football' : 'generated';
+        team.playerSource = team.players?.length
+          ? options.apiTeam?.source === 'sportsdb' ? 'sportsdb' : 'api-football'
+          : 'generated';
       }
     } catch (error: any) {
       console.warn(`Failed to hydrate players for ${team.name}:`, error.message);

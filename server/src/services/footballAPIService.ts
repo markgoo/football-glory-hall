@@ -3,9 +3,9 @@ import { unCountryNames } from '../data/unCountries';
 import { getCountryNameZh } from '../data/countryNamesZh';
 
 export interface FootballApiPlayer {
-  id: number;
+  id: number | string;
   name: string;
-  age: number;
+  age?: number;
   number: number;
   position: string;
   photo: string;
@@ -29,11 +29,15 @@ interface TeamSquadResponse {
   players: FootballApiPlayer[];
 }
 
+const SPORTSDB_API_KEY = process.env.SPORTSDB_API_KEY || '123';
+const SPORTSDB_API_URL = process.env.SPORTSDB_API_URL || `https://www.thesportsdb.com/api/v1/json/${SPORTSDB_API_KEY}`;
+
 class FootballAPIService {
   private client: any;
   private clientInitialized = false;
   private teamSearchCache = new Map<string, any[]>();
   private squadCache = new Map<number, TeamSquadResponse | null>();
+  private sportsDbSquadCache = new Map<string, TeamSquadResponse | null>();
   private rateLimitedUntil = 0;
 
   private async getPersistentCache(key: string) {
@@ -161,6 +165,140 @@ class FootballAPIService {
         console.error('Failed to fetch team squad:', error.message);
       }
       return null;
+    }
+  }
+
+  private normalizeSportsDbPosition(position?: string) {
+    const value = String(position || '').toLowerCase();
+    if (value.includes('goalkeeper')) return 'Goalkeeper';
+    if (value.includes('defender') || value.includes('centre-back') || value.includes('full-back')) return 'Defender';
+    if (value.includes('midfielder') || value.includes('winger')) return 'Midfielder';
+    if (value.includes('forward') || value.includes('striker') || value.includes('attacker')) return 'Attacker';
+    return position || 'Player';
+  }
+
+  private isSportsDbPlayingPosition(position?: string) {
+    const value = String(position || '').toLowerCase();
+    if (!value) return false;
+    if (value.includes('coach') || value.includes('manager') || value.includes('president') || value.includes('chairman')) return false;
+    return [
+      'goalkeeper',
+      'defender',
+      'centre-back',
+      'center-back',
+      'full-back',
+      'midfielder',
+      'winger',
+      'forward',
+      'striker',
+      'attacker'
+    ].some(token => value.includes(token));
+  }
+
+  private transformSportsDbPlayer(player: any, index: number): FootballApiPlayer {
+    return {
+      id: player.idPlayer || `sportsdb-${index + 1}`,
+      name: player.strPlayer || player.strPlayerAlternate || `Player ${index + 1}`,
+      age: player.dateBorn ? Math.max(0, new Date().getFullYear() - Number(String(player.dateBorn).slice(0, 4) || 0)) : undefined,
+      number: Number(player.strNumber || player.intSquadNumber || 0) || index + 1,
+      position: this.normalizeSportsDbPosition(player.strPosition),
+      photo: player.strCutout || player.strThumb || player.strRender || ''
+    };
+  }
+
+  private transformSportsDbTeam(item: any, fallbackTier = 78, index = 0) {
+    const id = Number(item.idTeam || 0) || 0;
+    const name = item.strTeam || item.strAlternate || `SportsDB Team ${index + 1}`;
+    const badge = item.strBadge || item.strLogo || item.strTeamBadge || null;
+    return {
+      source: 'sportsdb',
+      sportsDbId: id ? String(id) : undefined,
+      team: {
+        id: id ? 800000 + id : 800000 + index,
+        name,
+        code: String(item.strTeamShort || name.substring(0, 3)).toUpperCase(),
+        country: item.strCountry || undefined,
+        founded: Number(item.intFormedYear || 0) || undefined,
+        logo: badge,
+        strength: this.getKnownStrength(name, Math.max(68, fallbackTier - Math.floor(index / 2)))
+      },
+      players: []
+    };
+  }
+
+  async getSportsDbTeamSquad(sportsDbTeamId: string | number, teamName?: string) {
+    const cacheKey = String(sportsDbTeamId || teamName || '').trim();
+    if (!cacheKey) return null;
+    if (this.sportsDbSquadCache.has(cacheKey)) return this.sportsDbSquadCache.get(cacheKey) || null;
+    const persistentKey = `sportsdb-squad:${cacheKey}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) {
+      this.sportsDbSquadCache.set(cacheKey, persistent);
+      return persistent || null;
+    }
+
+    try {
+      const response = await axios.get(`${SPORTSDB_API_URL}/lookup_all_players.php`, {
+        params: { id: sportsDbTeamId },
+        timeout: 15000
+      });
+      const players = (Array.isArray(response.data?.player) ? response.data.player : [])
+        .filter((player: any) => this.isSportsDbPlayingPosition(player.strPosition));
+      if (players.length === 0) {
+        this.sportsDbSquadCache.set(cacheKey, null);
+        return null;
+      }
+      const squad: TeamSquadResponse = {
+        team: {
+          id: Number(sportsDbTeamId) || 0,
+          name: teamName || players[0]?.strTeam || 'SportsDB Team',
+          logo: ''
+        },
+        players: players.map((player: any, index: number) => this.transformSportsDbPlayer(player, index))
+      };
+      this.sportsDbSquadCache.set(cacheKey, squad);
+      await this.setPersistentCache(persistentKey, squad);
+      return squad;
+    } catch (error: any) {
+      if (error.response?.status === 429) {
+        this.rateLimitedUntil = Date.now() + 60_000;
+        console.warn('TheSportsDB rate limit reached while fetching squad; skipping SportsDB lookups for 60 seconds');
+      } else {
+        console.warn('Failed to fetch TheSportsDB squad:', error.message);
+      }
+      return null;
+    }
+  }
+
+  async resolveSportsDbTeam(params: { name: string; country?: string }) {
+    const search = String(params.name || '').trim();
+    if (!search) return undefined;
+    const persistentKey = `sportsdb-team-search:${search.toLowerCase()}:${String(params.country || '').toLowerCase()}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || undefined;
+
+    try {
+      const response = await axios.get(`${SPORTSDB_API_URL}/searchteams.php`, {
+        params: { t: search },
+        timeout: 15000
+      });
+      const teams = Array.isArray(response.data?.teams) ? response.data.teams : [];
+      const normalizedTarget = this.normalizeComparableName(search);
+      const normalizedCountry = this.normalizeComparableName(params.country || '');
+      const match = teams.find((team: any) => {
+        const name = this.normalizeComparableName(team.strTeam || '');
+        const alternate = this.normalizeComparableName(team.strAlternate || '');
+        const country = this.normalizeComparableName(team.strCountry || '');
+        const nameMatches = name === normalizedTarget || alternate === normalizedTarget || name.includes(normalizedTarget);
+        const countryMatches = !normalizedCountry || country === normalizedCountry;
+        return nameMatches && countryMatches;
+      }) || teams[0];
+      const result = match ? this.transformSportsDbTeam(match) : undefined;
+      await this.setPersistentCache(persistentKey, result || null);
+      return result;
+    } catch (error: any) {
+      console.warn(`Failed to resolve TheSportsDB team for ${search}:`, error.message);
+      return undefined;
     }
   }
 
@@ -335,10 +473,26 @@ class FootballAPIService {
   }
 
   async getResolvedTeamSquad(params: { name: string; country?: string; preferredId?: number; national?: boolean }) {
+    if (params.preferredId && params.preferredId >= 800000) {
+      const sportsDbTeamId = params.preferredId - 800000;
+      const squad = await this.getSportsDbTeamSquad(sportsDbTeamId, params.name);
+      return { apiId: params.preferredId, squad, source: 'sportsdb' };
+    }
+
+    const sportsDbTeam = await this.resolveSportsDbTeam({ name: params.name, country: params.country });
+    if (sportsDbTeam?.sportsDbId) {
+      const sportsDbApiId = Number(sportsDbTeam.team.id);
+      const squad = await this.getSportsDbTeamSquad(sportsDbTeam.sportsDbId, sportsDbTeam.team.name);
+      if (squad?.players?.length) return { apiId: sportsDbApiId, squad, source: 'sportsdb' };
+    }
+
     const apiId = await this.resolveTeamApiId(params);
-    if (!apiId) return { apiId: undefined, squad: null };
-    const squad = await this.getTeamSquad(apiId);
-    return { apiId, squad };
+    if (apiId) {
+      const squad = await this.getTeamSquad(apiId);
+      if (squad?.players?.length) return { apiId, squad, source: 'api-football' };
+    }
+
+    return { apiId, squad: null, source: apiId ? 'api-football' : undefined };
   }
 
   // 转换API数据为内部格式
@@ -453,6 +607,75 @@ class FootballAPIService {
       { id: 265, country: 'Chile', quota: globalLeagueQuota, tier: 74 },
       { id: 98, country: 'Japan', quota: globalLeagueQuota, tier: 76 }
     ].filter(league => league.quota > 0);
+  }
+
+  private getSportsDbLeaguePlan(teamCount: number) {
+    const topLeagueQuota = teamCount <= 8 ? 2 : teamCount <= 16 ? 3 : teamCount <= 32 ? 4 : teamCount <= 64 ? 6 : 8;
+    const strongLeagueQuota = teamCount <= 16 ? 1 : teamCount <= 32 ? 2 : teamCount <= 64 ? 3 : 5;
+    const globalLeagueQuota = teamCount <= 32 ? 1 : teamCount <= 64 ? 2 : 3;
+
+    return [
+      { name: 'English Premier League', country: 'England', quota: topLeagueQuota, tier: 95 },
+      { name: 'Spanish La Liga', country: 'Spain', quota: topLeagueQuota, tier: 95 },
+      { name: 'Italian Serie A', country: 'Italy', quota: topLeagueQuota, tier: 93 },
+      { name: 'German Bundesliga', country: 'Germany', quota: Math.max(1, topLeagueQuota - 1), tier: 92 },
+      { name: 'French Ligue 1', country: 'France', quota: strongLeagueQuota, tier: 90 },
+      { name: 'Dutch Eredivisie', country: 'Netherlands', quota: strongLeagueQuota, tier: 86 },
+      { name: 'Portuguese Primeira Liga', country: 'Portugal', quota: strongLeagueQuota, tier: 85 },
+      { name: 'Turkish Super Lig', country: 'Turkey', quota: globalLeagueQuota, tier: 82 },
+      { name: 'Brazilian Serie A', country: 'Brazil', quota: globalLeagueQuota + 1, tier: 84 },
+      { name: 'Argentinian Primera Division', country: 'Argentina', quota: globalLeagueQuota, tier: 83 },
+      { name: 'American Major League Soccer', country: 'USA', quota: globalLeagueQuota, tier: 78 },
+      { name: 'Scottish Premier League', country: 'Scotland', quota: globalLeagueQuota, tier: 79 },
+      { name: 'Belgian Pro League', country: 'Belgium', quota: globalLeagueQuota, tier: 78 },
+      { name: 'Australian A-League', country: 'Australia', quota: globalLeagueQuota, tier: 72 }
+    ].filter(league => league.quota > 0);
+  }
+
+  async getSportsDbTeamsByLeague(leagueName: string, fallbackTier = 78) {
+    const persistentKey = `sportsdb-league-teams:${leagueName}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || [];
+
+    try {
+      const response = await axios.get(`${SPORTSDB_API_URL}/search_all_teams.php`, {
+        params: { l: leagueName },
+        timeout: 15000
+      });
+      const teams = (Array.isArray(response.data?.teams) ? response.data.teams : [])
+        .map((item: any, index: number) => this.transformSportsDbTeam(item, fallbackTier, index));
+      await this.setPersistentCache(persistentKey, teams);
+      return teams;
+    } catch (error: any) {
+      console.warn(`Failed to fetch TheSportsDB teams for ${leagueName}:`, error.message);
+      return [];
+    }
+  }
+
+  async getSportsDbPopularTeams(teamCount: number, countries?: string[]) {
+    const normalizedCountries = (countries || []).map(country => String(country).trim()).filter(Boolean).sort();
+    const persistentKey = `sportsdb-popular-teams:${teamCount}:${normalizedCountries.join('|') || 'global'}`;
+    const persistent = await this.getPersistentCache(persistentKey);
+    if (persistent !== undefined) return persistent || [];
+
+    const selectedCountries = this.normalizeCountries(countries);
+    const allTeams: any[] = [];
+    const leaguePlan = this.getSportsDbLeaguePlan(teamCount)
+      .filter(league => this.countryMatches(league.country, selectedCountries));
+
+    for (const league of leaguePlan) {
+      const leagueTeams = await this.getSportsDbTeamsByLeague(league.name, league.tier);
+      allTeams.push(...leagueTeams
+        .filter((item: any) => this.countryMatches(item.team?.country || league.country, selectedCountries))
+        .sort((a: any, b: any) => (b.team?.strength || 0) - (a.team?.strength || 0))
+        .slice(0, league.quota));
+    }
+
+    const result = this.dedupeTeams(allTeams)
+      .sort((a: any, b: any) => (b.team?.strength || 0) - (a.team?.strength || 0))
+      .slice(0, teamCount);
+    await this.setPersistentCache(persistentKey, result);
+    return result;
   }
 
   private getKnownStrength(teamName: string, fallbackTier: number) {
@@ -578,6 +801,10 @@ class FootballAPIService {
     const allTeams: any[] = [];
     const selectedCountries = this.normalizeCountries(countries);
 
+    const preferredSportsDbTeams = await this.getSportsDbPopularTeams(teamCount, countries);
+    if (preferredSportsDbTeams.length >= teamCount) return preferredSportsDbTeams.slice(0, teamCount);
+    allTeams.push(...preferredSportsDbTeams);
+
     try {
       const leaguePlan = this.getLeaguePlan(teamCount)
         .filter(league => this.countryMatches(league.country, selectedCountries));
@@ -602,6 +829,11 @@ class FootballAPIService {
         .sort((a: any, b: any) => (b.team.strength || 0) - (a.team.strength || 0));
 
       if (uniqueTeams.length < teamCount) {
+        const sportsDbTeams = await this.getSportsDbPopularTeams(teamCount - uniqueTeams.length, countries);
+        uniqueTeams.push(...sportsDbTeams);
+      }
+
+      if (uniqueTeams.length < teamCount) {
         const randomTeams = await this.getRandomTeams(teamCount - uniqueTeams.length, countries);
         uniqueTeams.push(...randomTeams);
       }
@@ -620,6 +852,7 @@ class FootballAPIService {
   clearRuntimeCache() {
     this.teamSearchCache.clear();
     this.squadCache.clear();
+    this.sportsDbSquadCache.clear();
     this.rateLimitedUntil = 0;
   }
 

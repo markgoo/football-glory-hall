@@ -48,7 +48,7 @@ export class Team {
   externalApiId?: number;
 
   @Column({ type: 'text', nullable: true })
-  playerSource?: 'api-football' | 'generated';
+  playerSource?: 'api-football' | 'sportsdb' | 'generated';
 
   @Column({ type: 'datetime', nullable: true })
   playersSyncedAt?: Date;

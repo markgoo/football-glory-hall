@@ -20,7 +20,7 @@ export interface Team {
   country?: string;
   founded?: number;
   externalApiId?: number;
-  playerSource?: 'api-football' | 'generated';
+  playerSource?: 'api-football' | 'sportsdb' | 'generated';
   playersSyncedAt?: string;
   players?: TeamPlayer[];
   groupName?: string;

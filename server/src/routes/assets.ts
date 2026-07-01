@@ -13,7 +13,10 @@ const isAllowedImageHost = (hostname: string) => {
   return (
     normalized === 'flagcdn.com' ||
     normalized.endsWith('.flagcdn.com') ||
-    normalized === 'media.api-sports.io'
+    normalized === 'media.api-sports.io' ||
+    normalized === 'www.thesportsdb.com' ||
+    normalized === 'thesportsdb.com' ||
+    normalized === 'r2.thesportsdb.com'
   );
 };
 

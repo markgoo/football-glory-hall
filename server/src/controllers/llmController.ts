@@ -194,10 +194,10 @@ const normalizeApiPlayerPosition = (position?: string) => {
 };
 
 const hydrateMissingRealPlayers = async (team: Team, national: boolean) => {
-  if (team.playerSource === 'api-football' && Array.isArray(team.players) && team.players.length > 0) return team;
+  if (['api-football', 'sportsdb'].includes(team.playerSource || '') && Array.isArray(team.players) && team.players.length > 0) return team;
 
   try {
-    const { apiId, squad } = await FootballAPIService.getResolvedTeamSquad({
+    const { apiId, squad, source } = await FootballAPIService.getResolvedTeamSquad({
       name: team.name,
       country: team.country,
       preferredId: team.externalApiId,
@@ -214,7 +214,7 @@ const hydrateMissingRealPlayers = async (team: Team, national: boolean) => {
         position: normalizeApiPlayerPosition(player.position),
         photo: player.photo
       }));
-      team.playerSource = 'api-football';
+      team.playerSource = source === 'sportsdb' ? 'sportsdb' : 'api-football';
       team.playersSyncedAt = new Date();
       await AppDataSource.getRepository(Team).save(team);
     }
